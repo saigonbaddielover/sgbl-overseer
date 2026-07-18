@@ -5,9 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-18
+
 ### Added
-- `overseer doctor` now checks the running Claude Code version and warns when it drifts from the
-  tested baseline (`2.1.214`) — surfaces upstream layout-change risk without hard-blocking.
+- **Codex support.** `list`, `read`, `chat`, `send`, `wait` now auto-detect whether a pane runs
+  Claude Code or Codex and read the right transcript — the same commands drive both. Codex discovery
+  reads the rollout jsonl the codex process holds open (`/proc/<pid>/fd` →
+  `~/.codex/sessions/**/rollout-*.jsonl`); turn completion is the rollout's `task_complete` event, and
+  the reply its `last_agent_message`. `quit`/`slash`/`menu` stay Claude-only for now.
+- `list` gained a **HARNESS** column (claude/codex).
+- `overseer doctor` also checks the running Codex version + `~/.codex/sessions`, warning when Codex
+  drifts from its tested baseline (`0.144.5`).
+- `overseer doctor` checks the running Claude Code version and warns when it drifts from the tested
+  baseline (`2.1.214`) — surfaces upstream layout-change risk without hard-blocking.
 - README: `Updating` (apply with `/reload-plugins`, no restart), `Compatibility`, and a
   `Useful Claude Code commands` list.
 
