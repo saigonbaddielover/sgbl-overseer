@@ -14,7 +14,7 @@ _is_active() {
   local pane="$1" name="$2" e ne; e=$(printf '\033')
   ne=$(printf '%s' "$name" | sed 's/[][(){}.^$*+?|\\]/\\&/g')   # match the label literally
   tmux capture-pane -e -p -t "$pane" 2>/dev/null \
-    | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|[❯▶►●➤] *${ne}"
+    | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›] *${ne}"
 }
 # ---- live input line inspection (send path) --------------------------------
 # the live input line. prefer the row under the cursor (#{cursor_y}) so a menu/autocomplete that
