@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `overseer doctor` now checks the running Claude Code version and warns when it drifts from the
+  tested baseline (`2.1.214`) — surfaces upstream layout-change risk without hard-blocking.
+- README: `Updating` (apply with `/reload-plugins`, no restart), `Compatibility`, and a
+  `Useful Claude Code commands` list.
+
+### Changed
+- Docs: apply overseer updates with `/reload-plugins` instead of restarting Claude Code (it re-wires
+  the bundled `Stop` hook and reloads the skill in the current session).
+
 ## [0.2.0] - 2026-07-18
 
 ### Added

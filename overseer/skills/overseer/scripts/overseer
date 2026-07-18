@@ -4,6 +4,7 @@
 set -eu
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+TESTED_CLAUDE_VERSION=2.1.214
 
 _die() { printf 'overseer: %s\n' "$1" >&2; exit 1; }
 _need() { command -v "$1" >/dev/null 2>&1 || _die "missing dependency: $1"; }
@@ -472,12 +473,22 @@ cmd_menu() {
 # Code's on-disk session state is where discovery expects it. Run this first when a pane "can't be
 # found": a missing sessions dir usually means no claude is running OR Claude Code changed its layout.
 cmd_doctor() {
-  local bad=0 n
+  local bad=0 n cver
   printf 'overseer doctor (CLAUDE_HOME=%s)\n' "$CLAUDE_HOME"
   if [ "$(uname -s)" = Linux ]; then printf '  [ok]   Linux\n'; else printf '  [FAIL] not Linux — discovery needs /proc\n'; bad=1; fi
   [ -d /proc ] && printf '  [ok]   /proc present\n' || { printf '  [FAIL] /proc missing\n'; bad=1; }
   if command -v tmux >/dev/null 2>&1; then printf '  [ok]   tmux (%s)\n' "$(tmux -V 2>/dev/null)"; else printf '  [FAIL] tmux not found\n'; bad=1; fi
   if command -v jq >/dev/null 2>&1; then printf '  [ok]   jq (%s)\n' "$(jq --version 2>/dev/null)"; else printf '  [FAIL] jq not found — needed by read/chat/wait\n'; bad=1; fi
+  if command -v claude >/dev/null 2>&1; then
+    cver=$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    if [ "$cver" = "$TESTED_CLAUDE_VERSION" ]; then
+      printf '  [ok]   claude %s (matches tested baseline)\n' "$cver"
+    else
+      printf '  [warn] claude %s — overseer was verified against %s; if discovery misbehaves the on-disk layout may have changed (see README caveats)\n' "${cver:-unknown}" "$TESTED_CLAUDE_VERSION"
+    fi
+  else
+    printf '  [warn] claude CLI not on PATH — cannot check version drift\n'
+  fi
   if tmux info >/dev/null 2>&1; then printf '  [ok]   tmux server running\n'; else printf '  [warn] no tmux server yet (start a tmux session to drive)\n'; fi
   if [ -d "$CLAUDE_HOME/sessions" ] && ls "$CLAUDE_HOME"/sessions/*.json >/dev/null 2>&1; then
     n=$(ls "$CLAUDE_HOME"/sessions/*.json 2>/dev/null | wc -l)
