@@ -1,0 +1,15 @@
+{
+  "name": "sgbl",
+  "description": "Claude Code tools by saigonbaddielover — starting with overseer.",
+  "owner": { "name": "saigonbaddielover" },
+  "plugins": [
+    {
+      "name": "overseer",
+      "source": "./overseer",
+      "description": "One agent that oversees others: drive/read other agent sessions (Claude Code) and shells in tmux panes, turn-based. Linux + tmux.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": ["tmux", "claude-code", "session-control"]
+    }
+  ]
+}
