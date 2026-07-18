@@ -45,6 +45,14 @@ That installs the skill, the `overseer` script, and the turn-done hook together 
 requirements above are present). Then just ask Claude things like *"read the latest from the claude in
 my other tmux pane"* or *"reply to it with X"* — the skill triggers on its own.
 
+## Updating
+
+```
+/plugin marketplace update sgbl   # re-fetch the marketplace from GitHub
+/plugin update overseer           # pull the new version into the plugin cache
+/reload-plugins                   # activate it in the current session — no restart
+```
+
 ## Commands
 
 All work goes through one script; the agent calls it as
@@ -93,6 +101,15 @@ answer is never read half-written; without the hook it simply falls back to poll
   release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
 
+## Compatibility
+
+Verified against **Claude Code 2.1.214**. Because overseer reads Claude Code's internal on-disk layout
+(above), a Claude Code update *could* change that layout and break discovery. `overseer doctor` prints
+the running Claude Code version and warns when it drifts from the tested baseline — run it after a
+Claude Code update, and if discovery misbehaves, open an issue with its output. There is no plugin
+manifest field to pin a Claude Code version, so compatibility is tracked here + in `doctor`, not
+enforced — the plugin never hard-blocks on version.
+
 ## Troubleshooting
 
 Run the preflight first:
@@ -133,6 +150,14 @@ claude plugin tag ./overseer --push   # tags overseer--v<version>, pushes it, re
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected).
+
+### Useful Claude Code commands
+
+- `/reload-plugins` — apply an overseer update or a local `hooks/`/skill edit in the current session, no restart.
+- `/reload-skills` — pick up a `SKILL.md` text edit on disk.
+- `/hooks` — confirm the bundled `Stop` hook (`turn-done.sh`) is wired.
+- `/plugin` — enable / disable / inspect / update overseer interactively.
+- `/release-notes` — see what changed when Claude Code itself updates (the upstream this reads).
 
 ## License
 

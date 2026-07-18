@@ -14,8 +14,10 @@ Add this repo as a **local** marketplace and install from your working tree:
 /plugin install overseer@sgbl --scope local
 ```
 
-After editing, refresh with `/plugin marketplace update sgbl` then `/plugin update overseer` (restart
-Claude Code to apply). Remove with `/plugin uninstall overseer@sgbl --scope local` and
+After editing, refresh with `/plugin marketplace update sgbl` then `/plugin update overseer`, then
+`/reload-plugins` to apply it in the current session — no restart. (A plain `SKILL.md` text edit is
+picked up automatically or with `/reload-skills`; changes under `hooks/` need `/reload-plugins`.)
+Remove with `/plugin uninstall overseer@sgbl --scope local` and
 `/plugin marketplace remove sgbl --scope local`.
 
 ## Validate before you push
@@ -54,7 +56,8 @@ gh pr create --fill
 claude plugin tag ./overseer --push -m "overseer %s"   # tags overseer--v<version>, pushes it
 ```
 
-Users update with `/plugin marketplace update sgbl` + `/plugin update overseer`.
+Users update with `/plugin marketplace update sgbl` + `/plugin update overseer` + `/reload-plugins`
+(no restart).
 
 ## Style
 
