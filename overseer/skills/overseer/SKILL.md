@@ -1,15 +1,20 @@
 ---
-description: Read or drive ANOTHER live process in a tmux pane from outside it — a running Claude Code session or a plain shell. Use when the user wants to see the latest conversation of a claude in a tmux pane they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell pane they are watching, or list which tmux panes are running what. Works on any pane the user watches, including tmux attached from a VSCode Remote-SSH terminal (tmux is server-side, so display location is irrelevant). Linux + tmux only; a plain non-tmux terminal cannot be driven.
+description: Read or drive ANOTHER live agent process in a tmux pane from outside it — a running Claude Code or Codex session, or a plain shell. Use when the user wants to see the latest conversation of a claude or codex in a tmux pane they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell pane they are watching, or list which tmux panes are running what agent. read/chat/send/wait/list auto-detect the harness (Claude Code or Codex). Works on any pane the user watches, including tmux attached from a VSCode Remote-SSH terminal (tmux is server-side, so display location is irrelevant). Linux + tmux only; a plain non-tmux terminal cannot be driven.
 ---
 
-# overseer — read and drive a live tmux pane (Claude Code, or a plain shell)
+# overseer — read and drive a live tmux pane (Claude Code, Codex, or a plain shell)
 
-A running Claude Code TUI cannot be talked to programmatically — the only input channel
-is the keyboard. This skill wraps a deterministic, self-verifying `tmux send-keys` /
-`capture-pane` procedure plus transcript reading, so you can read and drive another
-claude session — or run commands turn-based in a plain shell — that the user is watching
-in a tmux pane. It works the same whether the pane is on this box or displayed on the
-user's machine over VSCode Remote-SSH, because tmux is server-side here.
+A running agent TUI (Claude Code, Codex) cannot be talked to programmatically — the only
+input channel is the keyboard. This skill wraps a deterministic, self-verifying
+`tmux send-keys` / `capture-pane` procedure plus transcript reading, so you can read and
+drive another agent session — or run commands turn-based in a plain shell — that the user
+is watching in a tmux pane. It works the same whether the pane is on this box or displayed on
+the user's machine over VSCode Remote-SSH, because tmux is server-side here.
+
+**Harnesses.** `list`, `read`, `chat`, `send`, `wait` **auto-detect** whether a pane runs Claude
+Code or Codex and read the right transcript, so you use the same commands for both. `quit`, `slash`,
+`menu` are **Claude-only** today (Codex's TUI shortcuts differ); `peek`, `keys`, `sh`, `list --all`
+are harness-agnostic. Support for more harnesses is added behind these same commands.
 
 All work goes through one bundled script:
 
@@ -24,21 +29,21 @@ from stdin.
 
 | Command | Effect | Safe? |
 |---|---|---|
-| `list [--all]` | List tmux panes running a claude agent (session, pane, pids, cwd). `--all` lists **every** tmux pane and its foreground command — use it to find shell panes to target. | read-only |
-| `read <target>` | Print the last user prompt + last assistant reply from a claude session's transcript (`~/.claude/projects/<enc-cwd>/<sid>.jsonl`), resolved via the pane pid. | read-only |
+| `list [--all]` | List tmux panes running an agent + its **HARNESS** (claude or codex): session, pane, pids, cwd. `--all` lists **every** tmux pane and its foreground command — use it to find shell panes to target. | read-only |
+| `read <target>` | Print the last user prompt + last assistant reply from an agent's transcript (Claude `~/.claude/projects/.../<sid>.jsonl`, or Codex `~/.codex/sessions/.../rollout-*.jsonl`), auto-detected via the pane pid. | read-only |
 | `peek [raw] <target> [lines]` | Dump the pane's current screen. Default: the **whole** visible screen (a feature panel like `/status` fills it). `raw` keeps ANSI colors so the **active tab / selected row** — a reverse-video or background highlight, invisible in plain text — is readable. A trailing number caps plain output to the last N lines. Any pane. | read-only |
-| `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Claude pane.** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
-| `send [--yes\|--force] <target> <message\|->` | **Claude pane.** Place + submit the message, do **not** wait (fire-and-forget). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
-| `wait <target> [timeout]` | **Claude pane.** Block until the target's current turn finishes. | read-only |
-| `quit <target>` | **Claude pane.** Exit the Claude TUI (two Ctrl-C) to reveal the shell underneath, **keeping tmux and the pane alive**; confirms the pane left claude. | **SIDE EFFECT** |
-| `slash <target> </cmd>` | **Claude pane.** Run a Claude slash command (`/resume`, `/clear`, `/model`, ...) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
-| `menu <target> <item> [nav-key]` | **Claude pane.** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
+| `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
+| `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, do **not** wait (fire-and-forget). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
+| `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes. | read-only |
+| `quit <target>` | **Claude pane only.** Exit the Claude TUI (two Ctrl-C) to reveal the shell underneath, **keeping tmux and the pane alive**; confirms the pane left claude. | **SIDE EFFECT** |
+| `slash <target> </cmd>` | **Claude pane only.** Run a Claude slash command (`/resume`, `/clear`, `/model`, ...) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
+| `menu <target> <item> [nav-key]` | **Claude pane only.** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
 | `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses if the pane is not an idle shell. | **SIDE EFFECT** |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `y`, `Up`, `C-c`, ...) to answer a prompt/menu or interrupt. Any pane. | **SIDE EFFECT** |
 
-`chat`/`send`/`wait` are for a Claude Code TUI (they read its transcript to know a turn ended). `sh`
-is for a plain shell (it appends a unique sentinel line and waits for it — prompt-agnostic). `read`
-is claude-only; `peek`, `keys`, `list --all`, and `sh` work on any pane.
+`chat`/`send`/`wait`/`read` are for an agent TUI — Claude Code or Codex — and read its transcript to
+know a turn ended (auto-detected per pane). `sh` is for a plain shell (it appends a unique sentinel
+line and waits for it — prompt-agnostic). `peek`, `keys`, `list --all`, and `sh` work on any pane.
 
 Every message is placed by **bracketed paste** — atomic (tmux sends the exact bytes at once), so it
 handles one line, many lines, and lines wider than the pane uniformly, and a ghost suggestion can
@@ -81,11 +86,15 @@ machine), not here. To make such a terminal drivable, run it inside tmux.
 
 ## How completion is detected
 
-`chat`/`wait` know a turn ended by watching for an assistant message whose `stop_reason` is not
-`tool_use` in the transcript (a turn = zero or more tool_use messages then one terminal message).
-If **event mode** is installed (see below) a `Stop` hook also fires the moment a turn ends, so the
-wait wakes immediately instead of at the next poll; the transcript is still the source of truth for
-the reply, so the answer is never read half-written. Without the hook it falls back to polling.
+**Claude:** `chat`/`wait` know a turn ended by watching for an assistant message whose `stop_reason`
+is not `tool_use` in the transcript (a turn = zero or more tool_use messages then one terminal
+message). If **event mode** is installed (see below) a `Stop` hook also fires the moment a turn ends,
+so the wait wakes immediately instead of at the next poll; the transcript is still the source of truth
+for the reply, so the answer is never read half-written. Without the hook it falls back to polling.
+
+**Codex:** a turn is an `event_msg` `task_started` … `task_complete` pair in the rollout jsonl; `wait`
+polls for a new `task_complete` (there is no hook), and the reply is that event's `last_agent_message`.
+
 Do **not** use the on-screen spinner to judge done — a finished turn leaves a stale
 `Brewed/Churned for Ns` line on screen.
 
@@ -129,18 +138,19 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
    script types the message, verifies the input box contains exactly it, then waits for a
    keypress — relay the verified text to the user and get their confirmation before continuing.
 4. Any length is fine (see the intro): everything is placed by bracketed paste and verified before
-   submit. A first line starting with `/ ! # @` would open the TUI's command/bash/memory/file mode,
-   so the script prepends one space to dodge that — Claude Code trims it back off, so the message
-   still arrives literally.
+   submit. For **Claude** a first line starting with `/ ! # @` would open the TUI's
+   command/bash/memory/file mode, so the script prepends one space to dodge that — Claude Code trims
+   it back off, so the message still arrives literally. **Codex** does not trim a leading space (and a
+   pasted command does not open its menu), so a Codex message is delivered exactly as given.
 5. **`sh` auto-executes the command in the user's shell** the instant it is called (there is no
    confirm gate). Only use it when the user asked you to run that command in the terminal they are
    watching. It refuses any pane that is not an idle shell (so it never types into a running program
    or a claude TUI), and runs **one command line** — chain with `;` or `&&`.
-6. **`send`/`chat` refuse a session that is mid-turn** (its last transcript entry is a `tool_use`) to
-   avoid typing into a busy agent. If you get "session looks mid-turn", either `wait <t>` for it to
-   finish, or interrupt it with `keys <t> Escape`, then retry. If it is **actually idle** — a turn was
-   aborted while a tool was running, leaving `tool_use` as the last entry (a false-busy deadlock) —
-   rerun with `--force` to bypass the guard.
+6. **`send`/`chat` refuse a session that is mid-turn** to avoid typing into a busy agent (Claude: the
+   last transcript entry is a `tool_use`; Codex: a `task_started` has no matching `task_complete`). If
+   you get "session looks mid-turn", either `wait <t>` for it to finish, or interrupt it with
+   `keys <t> Escape`, then retry. If it is **actually idle** — a turn was aborted mid-tool (a
+   false-busy deadlock) — rerun with `--force` to bypass the guard.
 
 ## Gotchas the script already handles (do not re-derive)
 
@@ -158,8 +168,9 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
   while they scroll to read.
 - **Control bytes in a message** (a raw ESC, or an embedded `\e[201~` paste-end marker) are stripped
   before the bracketed paste, so pasted content can't terminate the paste early and inject keystrokes.
-- **The input line is read at the cursor row** (`#{cursor_y}`), not "the last `❯` on screen", so a
-  menu/autocomplete that draws its own `❯` below the box can't be mistaken for the prompt.
+- **The input line is read at the cursor row** (`#{cursor_y}`), not "the last prompt glyph on screen",
+  so a menu/autocomplete that draws its own glyph below the box can't be mistaken for the prompt. The
+  prompt glyph is `❯` for Claude and `›` for Codex; both are handled.
 - **A brand-new session with 0 turns has no transcript yet** — `chat`/`read`/`wait` can't resolve it;
   send its first message with `send` (needs no transcript), and after one turn the rest work.
 
@@ -179,7 +190,8 @@ polling — nothing breaks.
 
 ## Requirements
 
-- Linux (uses `/proc` to map pane pid → agent pid → sessionId) and `tmux`; `jq` for `read`/`chat`.
+- Linux (uses `/proc` to map pane pid → agent: Claude via `~/.claude/sessions/<pid>.json`, Codex via
+  the rollout jsonl the codex process holds open) and `tmux`; `jq` for `read`/`chat`.
 - Run from **outside** the target session's tmux client (this is normal — you drive it from a
   separate shell).
 

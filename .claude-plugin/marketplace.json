@@ -8,8 +8,8 @@
       "source": "./overseer",
       "displayName": "Overseer",
       "category": "development",
-      "description": "One agent that oversees others: drive/read other agent sessions (Claude Code) and shells in tmux panes, turn-based. Linux + tmux.",
-      "version": "0.2.0",
+      "description": "One agent that oversees others: drive/read other agent sessions (Claude Code, Codex) and shells in tmux panes, turn-based. Linux + tmux.",
+      "version": "0.3.0",
       "license": "MIT",
       "keywords": ["tmux", "claude-code", "session-control"]
     }

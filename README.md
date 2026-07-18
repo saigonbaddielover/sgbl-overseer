@@ -9,10 +9,10 @@ in **tmux panes**, turn-based, from outside them. Packaged as a
 
 The overseer opens (or attaches) a tmux pane, launches an agent harness in its shell, then reads and
 drives that sub-agent turn-based — while also being able to run shell commands directly. Today it
-speaks **Claude Code** (plus any shell); it's built so other harnesses can be added behind the same
-commands.
+speaks **Claude Code** and **Codex** (plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect
+which harness a pane runs. It's built so more harnesses can be added behind the same commands.
 
-A running Claude Code TUI has no API — its only input channel is the keyboard. `overseer` wraps a
+A running agent TUI has no API — its only input channel is the keyboard. `overseer` wraps a
 deterministic, self-verifying `tmux send-keys` / `capture-pane` procedure (plus transcript reading) so
 an agent can read and drive another session the user is watching. Because tmux is client/server, it
 works the same whether the pane is local or displayed over VSCode Remote-SSH — the driving happens
@@ -31,6 +31,7 @@ server-side.
   injection and the screen buffer lives client-side).
 - **jq** — for transcript reading.
 - **Claude Code** — this is a plugin for it.
+- **Codex** *(optional)* — to drive Codex panes as well; Claude-only setups need nothing extra.
 
 ## Install
 
@@ -61,18 +62,18 @@ All work goes through one script; the agent calls it as
 
 | Command | Effect |
 |---|---|
-| `list [--all]` | List panes running a claude agent. `--all`: every pane + its foreground command. |
-| `read <target>` | Print the last user prompt + last assistant reply from a claude session's transcript. |
+| `list [--all]` | List agent panes + their **HARNESS** (claude/codex). `--all`: every pane + its foreground command. |
+| `read <target>` | Print the last user prompt + last assistant reply from the agent's transcript (Claude or Codex, auto-detected). |
 | `peek [raw] <target> [lines]` | Dump the pane's current screen. `raw` keeps ANSI colors (see the active tab/selection). |
-| `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Claude.** Send, wait for the turn to finish, print the reply. |
-| `send [--yes\|--force] <target> <msg\|->` | **Claude.** Place + submit the message, don't wait. |
-| `wait <target> [timeout]` | **Claude.** Block until the current turn finishes. |
-| `quit <target>` | **Claude.** Exit the TUI (two Ctrl-C), revealing the shell, keeping tmux/pane alive. |
-| `slash <target> </cmd>` | **Claude.** Run a slash command (`/resume`, `/model`, ...) that `send`/`chat` can't. |
-| `menu <target> <item> [nav-key]` | **Claude.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). |
+| `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. |
+| `send [--yes\|--force] <target> <msg\|->` | **Agent (Claude/Codex).** Place + submit the message, don't wait. |
+| `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes. |
+| `quit <target>` | **Claude only.** Exit the TUI (two Ctrl-C), revealing the shell, keeping tmux/pane alive. |
+| `slash <target> </cmd>` | **Claude only.** Run a slash command (`/resume`, `/model`, ...) that `send`/`chat` can't. |
+| `menu <target> <item> [nav-key]` | **Claude only.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
-| `doctor` | Preflight: check Linux/`/proc`, `tmux`, `jq`, and that Claude Code's session state is where discovery expects it. |
+| `doctor` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
@@ -81,8 +82,11 @@ message to read a long, multi-line prompt from stdin.
 
 - **Delivery** is one atomic **bracketed paste**, verified before submit — uniform for one line, many
   lines, or a line wider than the pane, and a ghost autocomplete can never interleave.
-- **Turn completion** (`chat`/`wait`) is an assistant transcript message whose `stop_reason` isn't
-  `tool_use` — never the on-screen spinner (a finished turn leaves a stale spinner line).
+- **Turn completion** (`chat`/`wait`) comes from the transcript, never the on-screen spinner (a
+  finished turn leaves a stale spinner line): for Claude, an assistant message whose `stop_reason`
+  isn't `tool_use`; for Codex, a `task_complete` event in the rollout jsonl.
+- **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
+  pane holds its `~/.codex/sessions/**/rollout-*.jsonl` open (read straight off `/proc/<pid>/fd`).
 - **`sh` completion** is a unique sentinel line appended after the command — prompt-agnostic, no `PS1`
   assumption. Pagers are neutralized and stdin is `/dev/null`, so `git log`/`man`/`cat` won't hang.
 
@@ -96,19 +100,19 @@ answer is never read half-written; without the hook it simply falls back to poll
 ## Caveats
 
 - **Linux only** (`/proc`).
-- **Depends on Claude Code's internal on-disk layout** (`~/.claude/sessions/*.json`,
-  `~/.claude/projects/*/*.jsonl`) — undocumented and may change between Claude Code releases. If a
-  release breaks discovery, open an issue.
+- **Depends on each agent's internal on-disk layout** — Claude (`~/.claude/sessions/*.json`,
+  `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
+  may change between releases. If a release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
 
 ## Compatibility
 
-Verified against **Claude Code 2.1.214**. Because overseer reads Claude Code's internal on-disk layout
-(above), a Claude Code update *could* change that layout and break discovery. `overseer doctor` prints
-the running Claude Code version and warns when it drifts from the tested baseline — run it after a
-Claude Code update, and if discovery misbehaves, open an issue with its output. There is no plugin
-manifest field to pin a Claude Code version, so compatibility is tracked here + in `doctor`, not
-enforced — the plugin never hard-blocks on version.
+Verified against **Claude Code 2.1.214** and **Codex 0.144.5**. Because overseer reads each agent's
+internal on-disk layout (above), an upstream update *could* change that layout and break discovery.
+`overseer doctor` prints the running Claude Code / Codex versions and warns when either drifts from its
+tested baseline — run it after an update, and if discovery misbehaves, open an issue with its output.
+There is no plugin manifest field to pin an agent version, so compatibility is tracked here + in
+`doctor`, not enforced — the plugin never hard-blocks on version.
 
 ## Troubleshooting
 
