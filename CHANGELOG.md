@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-18
+
+### Added
+- **`menu` now works on Codex too**, completing harness parity — every command except the
+  shell-only `sh` drives both agents. Codex marks its active popup row with a bold cyan pointer
+  (`ESC[1m ESC[38;5;6m ›`) rather than Claude's reverse-video, so `_is_active` now also recognizes that
+  style. Codex popups (`/model`, `/approvals`, ...) are vertical: pass `Down` as the nav key.
+
 ## [0.4.0] - 2026-07-18
 
 ### Added
