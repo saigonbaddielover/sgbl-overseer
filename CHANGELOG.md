@@ -1,6 +1,22 @@
 # Changelog
 
-All notable changes to this project are documented here. Versions follow [SemVer](https://semver.org/).
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/), and versions follow [SemVer](https://semver.org/).
+
+## [Unreleased]
+
+## [0.2.0] - 2026-07-18
+
+### Added
+- `overseer doctor` — preflight check (Linux/`/proc`, `tmux`, `jq`, tmux server, and whether Claude
+  Code's `~/.claude/sessions/*.json` layout is where discovery expects it). Run it first when a pane
+  "can't be found".
+- Contributor scaffolding: GitHub Actions validation workflow, issue/PR templates, `CONTRIBUTING.md`,
+  `SECURITY.md`, `.gitattributes`.
+
+### Fixed
+- Shellcheck-clean: split two `local` + command-substitution assignments (SC2318/SC2155) so a
+  just-assigned value and command exit codes are not masked.
 
 ## [0.1.0] - 2026-07-18
 

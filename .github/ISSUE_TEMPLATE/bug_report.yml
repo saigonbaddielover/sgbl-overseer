@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in overseer doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The exact command you ran and what went wrong (paste the error).
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: overseer doctor output
+      description: "Run and paste: `bash \"$CLAUDE_PLUGIN_ROOT/skills/overseer/scripts/overseer\" doctor` (or from a clone: `overseer/skills/overseer/scripts/overseer doctor`)"
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: ccver
+    attributes:
+      label: Claude Code version (`claude --version`)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / distro
+  - type: input
+    id: tmuxver
+    attributes:
+      label: tmux version (`tmux -V`)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else

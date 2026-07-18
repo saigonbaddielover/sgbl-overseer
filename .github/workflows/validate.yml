@@ -1,0 +1,33 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JSON manifests are valid
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   overseer/.claude-plugin/plugin.json \
+                   overseer/hooks/hooks.json; do
+            echo "jq: $f"; jq empty "$f"
+          done
+
+      - name: plugin.json and marketplace entry versions agree
+        run: |
+          pv=$(jq -r .version overseer/.claude-plugin/plugin.json)
+          mv=$(jq -r '.plugins[] | select(.name=="overseer") | .version' .claude-plugin/marketplace.json)
+          echo "plugin=$pv marketplace=$mv"
+          test -n "$pv" && test "$pv" = "$mv"
+
+      - name: shell scripts parse and lint
+        run: |
+          bash -n overseer/skills/overseer/scripts/overseer
+          bash -n overseer/hooks/turn-done.sh
+          shellcheck -S warning overseer/skills/overseer/scripts/overseer overseer/hooks/turn-done.sh

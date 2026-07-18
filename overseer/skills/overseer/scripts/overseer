@@ -144,7 +144,8 @@ _signal_since() {   # sid since_epoch
 # (event-driven, ~0.25s); falls back to the transcript stop_reason every ~2s so a session
 # the hook does not cover still resolves. args: jsonl, sid, baseline_turn_count, since_epoch, timeout_s.
 _wait_reply() {
-  local jl="$1" sid="$2" base="$3" since="$4" timeout="${5:-600}" deadline=$((SECONDS + timeout)) i=0 woke=0
+  local jl="$1" sid="$2" base="$3" since="$4" timeout="${5:-600}" i=0 woke=0
+  local deadline=$((SECONDS + timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$woke" = 0 ] && [ -n "$sid" ] && _signal_since "$sid" "$since" && woke=1
     # the signal only tells us to look now; correctness is the transcript actually showing the
@@ -366,7 +367,7 @@ cmd_sh() {
     bash|zsh|sh|fish|dash|ksh|-bash|-zsh|-sh) : ;;
     *) _die "pane $pane is running '$cur', not an idle shell; refusing (try keys/peek, or chat for a claude pane)" ;;
   esac
-  local tok="TMC_$$_$(date +%s%N | tail -c 7)"
+  local tok; tok="TMC_$$_$(date +%s%N | tail -c 7)"
   local esc; esc=$(printf '%s' "$cmd" | sed "s/'/'\\\\''/g")   # for a single-quoted eval arg
   # BEGIN/END sentinels (each printf on its own line) delimit the output so the command echo can't
   # leak in. run the command via `eval` under a TEMPORARY env: pagers -> cat (git log / man / less
@@ -467,6 +468,26 @@ cmd_menu() {
   _die "could not make '$name' active (cycled the whole view without it becoming highlighted — is it an item here? try: overseer peek raw $target)"
 }
 
+# preflight the runtime: the requirements (Linux/proc, tmux, jq) and — crucially — whether Claude
+# Code's on-disk session state is where discovery expects it. Run this first when a pane "can't be
+# found": a missing sessions dir usually means no claude is running OR Claude Code changed its layout.
+cmd_doctor() {
+  local bad=0 n
+  printf 'overseer doctor (CLAUDE_HOME=%s)\n' "$CLAUDE_HOME"
+  if [ "$(uname -s)" = Linux ]; then printf '  [ok]   Linux\n'; else printf '  [FAIL] not Linux — discovery needs /proc\n'; bad=1; fi
+  [ -d /proc ] && printf '  [ok]   /proc present\n' || { printf '  [FAIL] /proc missing\n'; bad=1; }
+  if command -v tmux >/dev/null 2>&1; then printf '  [ok]   tmux (%s)\n' "$(tmux -V 2>/dev/null)"; else printf '  [FAIL] tmux not found\n'; bad=1; fi
+  if command -v jq >/dev/null 2>&1; then printf '  [ok]   jq (%s)\n' "$(jq --version 2>/dev/null)"; else printf '  [FAIL] jq not found — needed by read/chat/wait\n'; bad=1; fi
+  if tmux info >/dev/null 2>&1; then printf '  [ok]   tmux server running\n'; else printf '  [warn] no tmux server yet (start a tmux session to drive)\n'; fi
+  if [ -d "$CLAUDE_HOME/sessions" ] && ls "$CLAUDE_HOME"/sessions/*.json >/dev/null 2>&1; then
+    n=$(ls "$CLAUDE_HOME"/sessions/*.json 2>/dev/null | wc -l)
+    printf '  [ok]   Claude session state found (%s/sessions/*.json: %s)\n' "$CLAUDE_HOME" "$n"
+  else
+    printf '  [warn] no %s/sessions/*.json — no claude running, OR Claude Code changed its on-disk layout (would break discovery; see README caveats)\n' "$CLAUDE_HOME"
+  fi
+  [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
+}
+
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
@@ -481,6 +502,7 @@ main() {
     quit) cmd_quit "$@" ;;
     slash) cmd_slash "$@" ;;
     menu) cmd_menu "$@" ;;
+    doctor) cmd_doctor "$@" ;;
     ''|-h|--help)
       printf 'usage: overseer <command> [args]   (t = tmux pane id %%N or session name)\n'
       printf '  list [--all]               claude panes (--all: every tmux pane + its command)\n'
@@ -494,6 +516,7 @@ main() {
       printf '  menu  <t> <item> [nav-key] claude: navigate a tab/menu until <item> is active (default key Right)\n'
       printf '  sh    <t> <command> [timeout]        shell pane: run one line, wait, print output+exit\n'
       printf '  keys  <t> <key>...         raw keys to answer prompts/menus (Enter Escape y Up C-c ...)\n'
+      printf '  doctor                     preflight: Linux/proc, tmux, jq, and that Claude Code session state is found\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;
     *) _die "unknown command: $cmd" ;;

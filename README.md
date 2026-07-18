@@ -1,5 +1,8 @@
 # overseer
 
+[![validate](https://github.com/saigonbaddielover/sgbl-overseer/actions/workflows/validate.yml/badge.svg)](https://github.com/saigonbaddielover/sgbl-overseer/actions/workflows/validate.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **One agent that oversees others.** Drive and read other agent sessions — and plain shells — running
 in **tmux panes**, turn-based, from outside them. Packaged as a
 [Claude Code plugin](https://code.claude.com/docs/en/plugins).
@@ -61,6 +64,7 @@ All work goes through one script; the agent calls it as
 | `menu <target> <item> [nav-key]` | **Claude.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
+| `doctor` | Preflight: check Linux/`/proc`, `tmux`, `jq`, and that Claude Code's session state is where discovery expects it. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
@@ -88,6 +92,22 @@ answer is never read half-written; without the hook it simply falls back to poll
   `~/.claude/projects/*/*.jsonl`) — undocumented and may change between Claude Code releases. If a
   release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
+
+## Troubleshooting
+
+Run the preflight first:
+
+```
+overseer doctor        # or: bash "$CLAUDE_PLUGIN_ROOT/skills/overseer/scripts/overseer" doctor
+```
+
+- **"no claude pane for target"** → the pane isn't a Claude session, or you targeted the wrong one.
+  `overseer list --all` shows every pane and its command; target a specific pane by its `%N`.
+- **`doctor` warns about `~/.claude/sessions/*.json`** → either no Claude session is running, or a
+  Claude Code update changed its on-disk layout (which breaks discovery). Open an issue with the
+  `doctor` output and your `claude --version`.
+- **Nothing gets driven** → the target must run **inside tmux** (a plain terminal can't be driven), and
+  you must run overseer from **outside** that pane's tmux client.
 
 ## Uninstall
 
