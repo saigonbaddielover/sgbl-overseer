@@ -6,6 +6,8 @@
     {
       "name": "overseer",
       "source": "./overseer",
+      "displayName": "Overseer",
+      "category": "development",
       "description": "One agent that oversees others: drive/read other agent sessions (Claude Code) and shells in tmux panes, turn-based. Linux + tmux.",
       "version": "0.2.0",
       "license": "MIT",

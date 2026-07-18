@@ -1,5 +1,4 @@
 ---
-name: overseer
 description: Read or drive ANOTHER live process in a tmux pane from outside it — a running Claude Code session or a plain shell. Use when the user wants to see the latest conversation of a claude in a tmux pane they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell pane they are watching, or list which tmux panes are running what. Works on any pane the user watches, including tmux attached from a VSCode Remote-SSH terminal (tmux is server-side, so display location is irrelevant). Linux + tmux only; a plain non-tmux terminal cannot be driven.
 ---
 
