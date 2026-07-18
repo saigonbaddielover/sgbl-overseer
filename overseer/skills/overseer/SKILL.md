@@ -11,10 +11,14 @@ drive another agent session — or run commands turn-based in a plain shell — 
 is watching in a tmux pane. It works the same whether the pane is on this box or displayed on
 the user's machine over VSCode Remote-SSH, because tmux is server-side here.
 
-**Harnesses.** `list`, `read`, `chat`, `send`, `wait` **auto-detect** whether a pane runs Claude
-Code or Codex and read the right transcript, so you use the same commands for both. `quit`, `slash`,
-`menu` are **Claude-only** today (Codex's TUI shortcuts differ); `peek`, `keys`, `sh`, `list --all`
-are harness-agnostic. Support for more harnesses is added behind these same commands.
+**Harnesses.** `list`, `read`, `chat`, `send`, `wait`, `quit`, `slash` **auto-detect** whether a pane
+runs Claude Code or Codex and adapt (right transcript, right exit keys), so you use the same commands
+for both. Only `menu` is **Claude-only** for now (Codex's popup highlight differs). `peek`, `keys`,
+`sh`, `list --all` are harness-agnostic. Codex specifics you may need: **quitting** takes a single
+Ctrl-C (the script handles it); to **interrupt a running Codex turn** use `keys <t> Escape` — NOT
+Ctrl-C, which would quit Codex when it is idle; a Codex **approval prompt** is answered with a letter
+key via `keys` (`y` approve once, `a` approve for session, `d` deny). Support for more harnesses is
+added behind these same commands.
 
 All work goes through one bundled script:
 
@@ -35,8 +39,8 @@ from stdin.
 | `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, do **not** wait (fire-and-forget). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes. | read-only |
-| `quit <target>` | **Claude pane only.** Exit the Claude TUI (two Ctrl-C) to reveal the shell underneath, **keeping tmux and the pane alive**; confirms the pane left claude. | **SIDE EFFECT** |
-| `slash <target> </cmd>` | **Claude pane only.** Run a Claude slash command (`/resume`, `/clear`, `/model`, ...) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
+| `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
+| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
 | `menu <target> <item> [nav-key]` | **Claude pane only.** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
 | `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses if the pane is not an idle shell. | **SIDE EFFECT** |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `y`, `Up`, `C-c`, ...) to answer a prompt/menu or interrupt. Any pane. | **SIDE EFFECT** |
@@ -69,12 +73,14 @@ EOF
   under the rules below.
 - "Run this in the terminal I'm watching" (a plain shell pane) → `sh` (runs it, waits, returns
   output + exit code — so the user sees it happen live and you get the result).
-- "Quit that claude but keep the terminal" → `quit` (the two Ctrl-C taps must be close together, so
-  it does them itself; sending them across separate calls arrives too late). After it, the pane is a
-  plain shell you drive with `sh`.
-- "Run /resume /clear /model ... in that claude" → `slash` (not `send`/`chat` — they keep `/` literal).
-  Then read the menu with `peek` and drive it with `keys` (Up/Down, Enter to pick, Esc to cancel).
-- It is showing a y/n prompt or a menu, or needs interrupting → `keys`.
+- "Quit that agent but keep the terminal" → `quit` (works for Claude and Codex; it sends the right
+  number of Ctrl-C taps close together itself). After it, the pane is a plain shell you drive with `sh`.
+- "Run /model /status ... (Claude also /resume /clear) in that agent" → `slash` (not `send`/`chat` —
+  they keep `/` literal). Then read the menu with `peek` and drive it with `keys` (Up/Down, Enter to
+  pick, Esc to cancel).
+- It is showing a y/n prompt or a menu, or needs interrupting → `keys` (**to interrupt a running Codex
+  turn use `Escape`, not `C-c` — Ctrl-C quits Codex when it is idle**; a Codex approval prompt takes a
+  letter: `y`/`a`/`d`).
 
 ## Scope: tmux panes only
 

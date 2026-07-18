@@ -68,8 +68,8 @@ All work goes through one script; the agent calls it as
 | `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. |
 | `send [--yes\|--force] <target> <msg\|->` | **Agent (Claude/Codex).** Place + submit the message, don't wait. |
 | `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes. |
-| `quit <target>` | **Claude only.** Exit the TUI (two Ctrl-C), revealing the shell, keeping tmux/pane alive. |
-| `slash <target> </cmd>` | **Claude only.** Run a slash command (`/resume`, `/model`, ...) that `send`/`chat` can't. |
+| `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
+| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. |
 | `menu <target> <item> [nav-key]` | **Claude only.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
@@ -86,7 +86,9 @@ message to read a long, multi-line prompt from stdin.
   finished turn leaves a stale spinner line): for Claude, an assistant message whose `stop_reason`
   isn't `tool_use`; for Codex, a `task_complete` event in the rollout jsonl.
 - **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
-  pane holds its `~/.codex/sessions/**/rollout-*.jsonl` open (read straight off `/proc/<pid>/fd`).
+  pane has a descendant process named `codex` (so a 0-turn Codex is detected before it opens a rollout).
+  Codex's transcript is the `~/.codex/sessions/**/rollout-*.jsonl` the process holds open, read straight
+  off `/proc/<pid>/fd`.
 - **`sh` completion** is a unique sentinel line appended after the command — prompt-agnostic, no `PS1`
   assumption. Pagers are neutralized and stdin is `/dev/null`, so `git log`/`man`/`cat` won't hang.
 

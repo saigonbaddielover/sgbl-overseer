@@ -29,10 +29,17 @@ _codex_rollout() {
   done
   return 1
 }
+_codex_pid() {
+  local pane_pid="$1" p
+  for p in $(_descendants "$pane_pid"); do
+    [ "$(cat "/proc/$p/comm" 2>/dev/null)" = codex ] && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
 # which agent harness runs in a pane (by pane_pid): claude | codex, or return 1 for neither.
 _harness_of() {
   _agent_pid "$1" >/dev/null 2>&1 && { printf claude; return 0; }
-  _codex_rollout "$1" >/dev/null 2>&1 && { printf codex; return 0; }
+  _codex_pid "$1" >/dev/null 2>&1 && { printf codex; return 0; }
   return 1
 }
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
@@ -43,7 +50,7 @@ _panes() {
   while IFS=$'\t' read -r s pid_id pp cmd; do
     case "$cmd" in
       claude) _agent_pid "$pp" >/dev/null 2>&1 && kind=claude || continue ;;
-      node)   _codex_rollout "$pp" >/dev/null 2>&1 && kind=codex || continue ;;
+      node)   _codex_pid "$pp" >/dev/null 2>&1 && kind=codex || continue ;;
       *) continue ;;
     esac
     cwd=$(readlink "/proc/$pp/cwd" 2>/dev/null || echo '?')
@@ -79,7 +86,8 @@ _target_ctx() {
     if [ -n "$sid" ]; then jl=$(_jsonl_of "$sid" "$cwd"); else jl=''; fi
     printf '%s\t%s\t%s' "$pane" claude "$jl"; return 0
   fi
-  if rf=$(_codex_rollout "$pp"); then
+  if _codex_pid "$pp" >/dev/null 2>&1; then
+    rf=$(_codex_rollout "$pp" 2>/dev/null || true)
     printf '%s\t%s\t%s' "$pane" codex "$rf"; return 0
   fi
   return 1

@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-18
+
+### Added
+- **Codex parity for `quit` and `slash`.** Both now auto-detect the harness and adapt: `quit` sends the
+  right number of Ctrl-C taps (Claude two, Codex one) and confirms the pane returned to a shell; `slash`
+  types a slash command into either TUI. Only `menu` stays Claude-only.
+- Codex is now detected by a descendant process named `codex` (not by an open rollout fd), so a **0-turn
+  Codex** — still at `Context 0%`, before it has opened a rollout file — is discovered by `list`, and
+  driven by `send`/`slash`/`quit`. `read`/`chat`/`wait` still need one turn (no transcript before that),
+  matching Claude's 0-turn behavior.
+
+### Changed
+- Docs (README + skill) note Codex specifics: quitting takes a single Ctrl-C; **interrupt a running
+  Codex turn with `Escape`, not Ctrl-C** (Ctrl-C quits Codex when idle); a Codex approval prompt is
+  answered with a letter key (`y`/`a`/`d`) via `keys`.
+
 ## [0.3.1] - 2026-07-18
 
 ### Changed
