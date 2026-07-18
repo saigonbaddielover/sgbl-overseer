@@ -125,12 +125,14 @@ git clone https://github.com/saigonbaddielover/sgbl-overseer
 /plugin install overseer@sgbl
 ```
 
-Validate and cut a release tag:
+Validate, then cut and push a release tag — CI publishes the GitHub Release automatically:
 
 ```
 claude plugin validate --strict ./overseer
-claude plugin tag ./overseer        # creates overseer--v<version>
+claude plugin tag ./overseer --push   # tags overseer--v<version>, pushes it, release workflow does the rest
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected).
 
 ## License
 

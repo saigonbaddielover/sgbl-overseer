@@ -30,17 +30,28 @@ overseer/skills/overseer/scripts/overseer doctor   # runtime preflight
 
 CI (`.github/workflows/validate.yml`) runs the JSON/version/shellcheck checks on every push and PR.
 
-## Release
+## Contribution flow
 
-1. Bump `version` in **both** `overseer/.claude-plugin/plugin.json` and the `.claude-plugin/marketplace.json`
-   entry (they must match — `claude plugin tag` enforces it).
-2. Move the `Unreleased` notes in `CHANGELOG.md` under the new version + date.
-3. Commit, then:
+`main` is protected: land changes through a branch → pull request → green CI → merge, not by pushing
+to `main` directly.
 
 ```
-claude plugin tag ./overseer --push -m "overseer %s"   # tags overseer--v<version> and pushes it
-git push
-gh release create overseer--v<version> --notes-from-tag
+git switch -c my-change
+# ... edit + validate ...
+git push -u origin my-change
+gh pr create --fill
+```
+
+## Release
+
+1. On a branch, bump `version` in **both** `overseer/.claude-plugin/plugin.json` and the
+   `.claude-plugin/marketplace.json` entry (they must match — `claude plugin tag` enforces it).
+2. Move the `Unreleased` notes in `CHANGELOG.md` under the new version + date.
+3. Open the PR, get CI green, merge to `main`.
+4. From `main`, cut and push the tag — the `release` workflow publishes the GitHub Release automatically:
+
+```
+claude plugin tag ./overseer --push -m "overseer %s"   # tags overseer--v<version>, pushes it
 ```
 
 Users update with `/plugin marketplace update sgbl` + `/plugin update overseer`.
