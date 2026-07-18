@@ -28,6 +28,10 @@ jobs:
 
       - name: shell scripts parse and lint
         run: |
-          bash -n overseer/skills/overseer/scripts/overseer
-          bash -n overseer/hooks/turn-done.sh
-          shellcheck -S warning overseer/skills/overseer/scripts/overseer overseer/hooks/turn-done.sh
+          for f in overseer/skills/overseer/scripts/overseer \
+                   overseer/skills/overseer/scripts/lib/*.sh \
+                   overseer/hooks/turn-done.sh; do
+            bash -n "$f"
+          done
+          shellcheck -x -S warning overseer/skills/overseer/scripts/overseer
+          shellcheck -S warning overseer/hooks/turn-done.sh

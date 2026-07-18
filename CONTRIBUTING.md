@@ -2,7 +2,10 @@
 
 ## Layout
 
-- `overseer/` — the plugin: `.claude-plugin/plugin.json`, `skills/overseer/` (the skill + `scripts/overseer`), `hooks/`.
+- `overseer/` — the plugin: `.claude-plugin/plugin.json`, `skills/overseer/` (the skill + `scripts/`), `hooks/`.
+- `skills/overseer/scripts/overseer` — the entry point (config, `main`, help); it sources `scripts/lib/`:
+  `discovery.sh` (pane → harness → transcript path), `transcript.sh` (Claude + Codex readers, turn-done),
+  `tui.sh` (screen read + keyboard/paste delivery), `commands.sh` (the `cmd_*` surface).
 - `.claude-plugin/marketplace.json` — the `sgbl` marketplace that lists the plugin.
 
 ## Test locally (no publish)
@@ -25,8 +28,9 @@ Remove with `/plugin uninstall overseer@sgbl --scope local` and
 ```
 claude plugin validate --strict ./overseer   # the plugin
 claude plugin validate --strict .             # the marketplace
-bash -n overseer/skills/overseer/scripts/overseer
-shellcheck -S warning overseer/skills/overseer/scripts/overseer overseer/hooks/turn-done.sh
+bash -n overseer/skills/overseer/scripts/overseer overseer/skills/overseer/scripts/lib/*.sh
+shellcheck -x -S warning overseer/skills/overseer/scripts/overseer   # -x follows the sourced lib/*.sh
+shellcheck -S warning overseer/hooks/turn-done.sh
 overseer/skills/overseer/scripts/overseer doctor   # runtime preflight
 ```
 
