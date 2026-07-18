@@ -1,3 +1,6 @@
 .DS_Store
 *.swp
 *~
+
+# scratchpad (per workspace convention: <cwd>/.tmp/)
+.tmp/
