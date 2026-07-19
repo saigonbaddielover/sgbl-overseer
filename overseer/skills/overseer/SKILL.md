@@ -36,9 +36,9 @@ from stdin.
 | `list [--all]` | List tmux panes running an agent + its **HARNESS** (claude or codex): session, pane, pids, cwd. `--all` lists **every** tmux pane and its foreground command — use it to find shell panes to target. | read-only |
 | `read <target>` | Print the last user prompt + last assistant reply from an agent's transcript (Claude `~/.claude/projects/.../<sid>.jsonl`, or Codex `~/.codex/sessions/.../rollout-*.jsonl`), auto-detected via the pane pid. | read-only |
 | `peek [raw] <target> [lines]` | Dump the pane's current screen. Default: the **whole** visible screen (a feature panel like `/status` fills it). `raw` keeps ANSI colors so the **active tab / selected row** — a reverse-video or background highlight, invisible in plain text — is readable. A trailing number caps plain output to the last N lines. Any pane. | read-only |
-| `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
+| `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. If the agent stops at an interactive prompt (permission / plan / select menu) it returns that question + how to answer instead of hanging. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, do **not** wait (fire-and-forget). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
-| `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes. | read-only |
+| `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
 | `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
@@ -81,6 +81,11 @@ EOF
 - It is showing a y/n prompt or a menu, or needs interrupting → `keys` (**to interrupt a running Codex
   turn use `Escape`, not `C-c` — Ctrl-C quits Codex when it is idle**; a Codex approval prompt takes a
   letter: `y`/`a`/`d`).
+- `chat`/`wait` said **"awaiting input"** → the agent is blocked on a prompt (permission / plan /
+  select) and quoted its question + options. Answer it, then continue: `keys <t> <n>` picks a numbered
+  option (add `keys <t> Enter` if it needs confirming; `menu <t> <label>` navigates to it by name);
+  `send <t> "<text>"` types free-text; then `wait <t>` / `read <t>`. Each answer may reveal the next
+  prompt (e.g. a plan approval → then a per-edit permission) — `wait` will surface each one.
 
 ## Scope: tmux panes only
 

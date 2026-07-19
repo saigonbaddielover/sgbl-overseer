@@ -94,22 +94,30 @@ cmd_chat() {
   since=$(date +%s)
   tmux send-keys -t "$pane" Enter
   printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
-  if _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since"; then
-    printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"
-  else
-    _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target"
-  fi
+  local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
+  case "$rc" in
+    0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
+       else printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"; fi ;;
+    2) _report_awaiting "$pane" "$target" ;;
+    *) _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target" ;;
+  esac
 }
 cmd_wait() {
   _need tmux; _need jq
   local target="${1:-}" timeout="${2:-600}"; [ -n "$target" ] || _die "usage: overseer wait <pane|session> [timeout_s]"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
+  if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; return 0; fi
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
   if _h_is_busy "$kind" "$path"; then
-    local sid; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
-    _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" && echo "idle" || _die "timeout after ${timeout}s"
+    local sid rc; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
+    rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" || rc=$?
+    case "$rc" in
+      0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
+      2) _report_awaiting "$pane" "$target" ;;
+      *) _die "timeout after ${timeout}s" ;;
+    esac
   else
     echo "idle"
   fi
