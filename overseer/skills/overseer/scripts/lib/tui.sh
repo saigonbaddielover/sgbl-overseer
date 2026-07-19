@@ -19,8 +19,9 @@ _is_active() {
 _awaiting() {
   local pane="$1" cap
   cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
-  printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›▶][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
-  printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯›▶ ]*[0-9]+[.)][[:space:]]' \
+  printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
+  [ "$(printf '%s\n' "$cap" | grep -cE '^[[:space:]]*[❯›]?[[:space:]]*[0-9]+[.)][[:space:]]')" -ge 2 ] || return 1
+  printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯› ]*[0-9]+[.)][[:space:]]' \
     | grep -vE '^--$|^[[:space:]]*$' | tail -10
 }
 _report_awaiting() {
@@ -68,11 +69,11 @@ _clear_box() {
 # else a "[Pasted text #N +M lines]" chip with M == newline count (multi-line); else just non-empty
 # real text (a single long line that wrapped). returns non-zero on failure.
 _paste_verified() {
-  local pane="$1" msg="$2" want nl i cap chip got
+  local pane="$1" msg="$2" want nl i cap chip got buf="overseer_paste_$$"
   want=$(_trim "$msg"); nl=$(printf '%s' "$msg" | tr -cd '\n' | wc -c)
   _clear_box "$pane" || return 2
-  printf '%s' "$msg" | tmux load-buffer -b overseer_paste - 2>/dev/null || return 3
-  tmux paste-buffer -d -p -b overseer_paste -t "$pane" 2>/dev/null || return 3
+  printf '%s' "$msg" | tmux load-buffer -b "$buf" - 2>/dev/null || return 3
+  tmux paste-buffer -d -p -b "$buf" -t "$pane" 2>/dev/null || return 3
   for i in $(seq 1 40); do
     [ "$(_realtext "$pane")" = "$want" ] && return 0
     cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null)
@@ -80,7 +81,7 @@ _paste_verified() {
     if [ -n "$chip" ]; then
       if [ "$nl" -gt 0 ]; then
         got=$(printf '%s' "$chip" | grep -oE '\+[0-9]+' | tr -cd '0-9')
-        [ "$got" = "$nl" ] && return 0
+        { [ "$got" = "$nl" ] || [ "$got" = "$((nl + 1))" ]; } && return 0
       else
         return 0
       fi
