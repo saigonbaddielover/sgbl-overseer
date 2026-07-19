@@ -43,7 +43,7 @@ main() {
       printf '  read  <t>                  agent: last user prompt + last assistant reply (from transcript)\n'
       printf '  peek  [raw] <t> [lines]    full current screen (raw: keep colors -> see active tab/selection)\n'
       printf '  chat  [--yes|--force] <t> <msg|-> [timeout]  agent: send, wait for the reply, print it\n'
-      printf '  send  [--yes|--force] <t> <msg|->  agent: paste + verify + submit (no wait)\n'
+      printf '  send  [--yes|--force] <t> <msg|->  agent: paste + verify + submit, confirm the turn started (no reply wait)\n'
       printf '  wait  <t> [timeout]        agent: block until the turn finishes\n'
       printf '  quit  <t>                  agent: exit the TUI (claude Ctrl-C x2, codex x1), reveal the shell, keep tmux\n'
       printf '  slash <t> </cmd>           agent: run a slash command (/model /status ...; claude /resume /clear ...)\n'

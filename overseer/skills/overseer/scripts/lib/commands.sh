@@ -61,6 +61,7 @@ cmd_send() {
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   [ "$force" = 0 ] && [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
+  local base; base=$(_h_turn_count "$kind" "$path" 2>/dev/null); base="${base:-0}"
 
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
   if [ "$confirm" = 1 ]; then
@@ -68,7 +69,12 @@ cmd_send() {
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }
   fi
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
-  printf 'sent to %s:\n%s\n' "$pane" "$msg"
+  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane") || rc=$?
+  case "$rc" in
+    2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
+    1) printf 'sent to %s:\n%s\n(could not confirm the turn started within 10s — peek: overseer peek %s)\n' "$pane" "$msg" "$target" ;;
+    *) printf 'sent to %s (turn started):\n%s\n' "$pane" "$msg" ;;
+  esac
 }
 # send + wait for the turn to finish + print the reply (the human round-trip).
 cmd_chat() {
@@ -82,10 +88,13 @@ cmd_chat() {
   local timeout="${3:-600}"; _uint "$timeout"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
-  [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none) — send its first message with: overseer send $target '<msg>' (send needs no transcript); after one turn chat/read/wait work"
-  [ "$force" = 0 ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
+  local has_tx=0; { [ -n "$path" ] && [ -f "$path" ]; } && has_tx=1
+  [ "$force" = 0 ] && [ "$has_tx" = 1 ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
 
-  local sid base since; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl); base=$(_h_turn_count "$kind" "$path")
+  local sid='' base=0 since
+  if [ "$has_tx" = 1 ]; then
+    [ "$kind" = claude ] && sid=$(basename "$path" .jsonl); base=$(_h_turn_count "$kind" "$path")
+  fi
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
@@ -94,6 +103,11 @@ cmd_chat() {
   since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
+  if [ "$has_tx" = 0 ]; then
+    path=$(_wait_started "$target" "$kind" "$path" 0 30 "$pane") || true
+    { [ -z "$path" ] || [ ! -f "$path" ]; } && _die "sent, but no transcript appeared for '$target' within 30s — check it with: overseer peek $target ; then resume: overseer wait $target"
+    [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
+  fi
   local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
   case "$rc" in
     0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
