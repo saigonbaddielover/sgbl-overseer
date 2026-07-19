@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-19
+
 ### Changed
 - Marketplace manifest hygiene: added the `$schema` reference for editor validation and dropped the
   non-standard `displayName` field (absent from the marketplace schema, silently ignored at load).
