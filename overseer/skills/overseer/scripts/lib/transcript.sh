@@ -76,6 +76,22 @@ _wait_reply() {
   done
   return 1
 }
+_wait_started() {
+  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" ctx
+  local deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ -z "$path" ] || [ ! -f "$path" ]; then
+      ctx=$(_target_ctx "$target" 2>/dev/null) && IFS=$'\t' read -r _ _ path <<< "$ctx" || true
+    fi
+    if [ -n "$path" ] && [ -f "$path" ]; then
+      _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
+      [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }
+    fi
+    [ -n "$pane" ] && _awaiting "$pane" >/dev/null 2>&1 && { printf '%s' "$path"; return 2; }
+    _nap
+  done
+  printf '%s' "$path"; return 1
+}
 _newest_transcript() {
   case "$1" in
     claude) ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -1 ;;

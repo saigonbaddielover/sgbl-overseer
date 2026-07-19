@@ -15,6 +15,16 @@ All notable changes to this project are documented here. The format is based on
   `TESTED_CLAUDE_VERSION` / `TESTED_CODEX_VERSION` baselines and the every-release bump they forced;
   `doctor` still prints the running versions for reference.
 
+### Fixed
+- **`send` now confirms the turn actually started before returning**, closing a race where a following
+  `wait`/`read` read stale state. `send` submitted and returned in the sub-second window before the
+  harness wrote the turn's first transcript marker, so an immediate `wait` reported `idle` and `read`
+  showed the previous reply (reproduced on both Claude and Codex). `send` now polls until the turn is
+  observable — mid-flight, already advanced, or stopped at an interactive prompt — bounded to 10s.
+- **`chat` handles the first message to a 0-turn session** instead of refusing it. A brand-new Claude or
+  Codex session has no transcript to baseline against; `chat` now sends, resolves the transcript once the
+  turn begins, then waits for the reply — so the first turn no longer requires a separate `send`.
+
 ## [0.5.2] - 2026-07-19
 
 Fixes from a full live + static audit of the interaction surface.

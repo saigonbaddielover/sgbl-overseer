@@ -37,7 +37,7 @@ from stdin.
 | `read <target>` | Print the last user prompt + last assistant reply from an agent's transcript (Claude `~/.claude/projects/.../<sid>.jsonl`, or Codex `~/.codex/sessions/.../rollout-*.jsonl`), auto-detected via the pane pid. | read-only |
 | `peek [raw] <target> [lines]` | Dump the pane's current screen. Default: the **whole** visible screen (a feature panel like `/status` fills it). `raw` keeps ANSI colors so the **active tab / selected row** — a reverse-video or background highlight, invisible in plain text — is readable. A trailing number caps plain output to the last N lines. Any pane. | read-only |
 | `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. If the agent stops at an interactive prompt (permission / plan / select menu) it returns that question + how to answer instead of hanging. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
-| `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, do **not** wait (fire-and-forget). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
+| `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, then confirm the turn actually started before returning (so a following `wait`/`read` doesn't race) — but do **not** wait for the reply (use `chat` for that). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
@@ -182,8 +182,9 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
 - **The input line is read at the cursor row** (`#{cursor_y}`), not "the last prompt glyph on screen",
   so a menu/autocomplete that draws its own glyph below the box can't be mistaken for the prompt. The
   prompt glyph is `❯` for Claude and `›` for Codex; both are handled.
-- **A brand-new session with 0 turns has no transcript yet** — `chat`/`read`/`wait` can't resolve it;
-  send its first message with `send` (needs no transcript), and after one turn the rest work.
+- **A brand-new session with 0 turns has no transcript yet** — `chat` and `send` handle the first
+  message anyway (they resolve the transcript once the turn begins); a bare `read`/`wait` still needs a
+  completed turn to read.
 
 ## Event mode (turn-done hook — bundled, faster `chat`/`wait`)
 
