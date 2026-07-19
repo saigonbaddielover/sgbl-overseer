@@ -5,10 +5,6 @@ set -eu
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-# shellcheck disable=SC2034
-TESTED_CLAUDE_VERSION=2.1.215
-# shellcheck disable=SC2034
-TESTED_CODEX_VERSION=0.144.5
 
 _die() { printf 'overseer: %s\n' "$1" >&2; exit 1; }
 _need() { command -v "$1" >/dev/null 2>&1 || _die "missing dependency: $1"; }

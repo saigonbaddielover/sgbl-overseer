@@ -239,6 +239,16 @@ cmd_menu() {
   _is_active "$pane" "$name" && { printf 'active: %s (pane %s)\n' "$name" "$pane"; return 0; }
   _die "could not make '$name' active (cycled the whole view without it becoming highlighted — is it an item here? try: overseer peek raw $target)"
 }
+_doctor_probe() {
+  local kind="$1" jl rc n
+  jl=$(_probe_contract "$kind") && rc=0 || rc=$?
+  case "$rc" in
+    0) n=$(_h_turn_count "$kind" "$jl"); printf '  [ok]   %s transcript readable (overseer parsed %s completed turns from the newest session)\n' "$kind" "$n" ;;
+    1) printf '  [warn] %s transcript has completed turns but overseer cannot read the reply — its on-disk schema may have changed (see README caveats): %s\n' "$kind" "$jl" ;;
+    2) printf '  [ok]   no %s transcript on disk yet — nothing to probe\n' "$kind" ;;
+    3) printf '  [ok]   newest %s transcript has no completed turn yet — nothing to probe\n' "$kind" ;;
+  esac
+}
 # preflight the runtime: the requirements (Linux/proc, tmux, jq) and — crucially — whether Claude
 # Code's on-disk session state is where discovery expects it. Run this first when a pane "can't be
 # found": a missing sessions dir usually means no claude is running OR Claude Code changed its layout.
@@ -251,13 +261,9 @@ cmd_doctor() {
   if command -v jq >/dev/null 2>&1; then printf '  [ok]   jq (%s)\n' "$(jq --version 2>/dev/null)"; else printf '  [FAIL] jq not found — needed by read/chat/wait\n'; bad=1; fi
   if command -v claude >/dev/null 2>&1; then
     cver=$(claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    if [ "$cver" = "$TESTED_CLAUDE_VERSION" ]; then
-      printf '  [ok]   claude %s (matches tested baseline)\n' "$cver"
-    else
-      printf '  [warn] claude %s — overseer was verified against %s; if discovery misbehaves the on-disk layout may have changed (see README caveats)\n' "${cver:-unknown}" "$TESTED_CLAUDE_VERSION"
-    fi
+    printf '  [ok]   claude %s\n' "${cver:-unknown}"
   else
-    printf '  [warn] claude CLI not on PATH — cannot check version drift\n'
+    printf '  [warn] claude CLI not on PATH — cannot drive claude panes\n'
   fi
   if tmux info >/dev/null 2>&1; then printf '  [ok]   tmux server running\n'; else printf '  [warn] no tmux server yet (start a tmux session to drive)\n'; fi
   if [ -d "$CLAUDE_HOME/sessions" ] && ls "$CLAUDE_HOME"/sessions/*.json >/dev/null 2>&1; then
@@ -266,14 +272,15 @@ cmd_doctor() {
   else
     printf '  [warn] no %s/sessions/*.json — no claude running, OR Claude Code changed its on-disk layout (would break discovery; see README caveats)\n' "$CLAUDE_HOME"
   fi
+  _doctor_probe claude
   if command -v codex >/dev/null 2>&1; then
     cxv=$(codex --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    if [ "$cxv" = "$TESTED_CODEX_VERSION" ]; then printf '  [ok]   codex %s (matches tested baseline)\n' "$cxv"
-    else printf '  [warn] codex %s — overseer was verified against %s; if codex discovery misbehaves the rollout layout may have changed\n' "${cxv:-unknown}" "$TESTED_CODEX_VERSION"; fi
+    printf '  [ok]   codex %s\n' "${cxv:-unknown}"
   else
     printf '  [warn] codex CLI not on PATH — codex panes cannot be driven (claude still works)\n'
   fi
   [ -d "$CODEX_HOME/sessions" ] && printf '  [ok]   Codex session state dir present (%s/sessions)\n' "$CODEX_HOME" \
     || printf '  [warn] no %s/sessions — no codex has run yet, or Codex changed its layout\n' "$CODEX_HOME"
+  _doctor_probe codex
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
 }

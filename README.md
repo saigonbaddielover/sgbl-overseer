@@ -112,12 +112,14 @@ answer is never read half-written; without the hook it simply falls back to poll
 
 ## Compatibility
 
-Verified against **Claude Code 2.1.214** and **Codex 0.144.5**. Because overseer reads each agent's
-internal on-disk layout (above), an upstream update *could* change that layout and break discovery.
-`overseer doctor` prints the running Claude Code / Codex versions and warns when either drifts from its
-tested baseline — run it after an update, and if discovery misbehaves, open an issue with its output.
-There is no plugin manifest field to pin an agent version, so compatibility is tracked here + in
-`doctor`, not enforced — the plugin never hard-blocks on version.
+Last verified live against **Claude Code 2.1.215** and **Codex 0.144.6**. Because overseer reads each
+agent's internal on-disk layout (above), an upstream update *could* change that layout and break
+discovery. Rather than pin exact versions, `overseer doctor` prints the running versions and then
+*probes the contract directly*: it runs overseer's own transcript readers against the newest on-disk
+session and warns only when a session that has completed turns can't be read — a real schema shift, not
+a version-number bump. Run it after an update, and if it warns, open an issue with its output. There is
+no plugin manifest field to pin an agent version, so compatibility is tracked here + in `doctor`, not
+enforced — the plugin never hard-blocks on version.
 
 ## Troubleshooting
 

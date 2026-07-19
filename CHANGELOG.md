@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 - Marketplace manifest hygiene: added the `$schema` reference for editor validation and dropped the
   non-standard `displayName` field (absent from the marketplace schema, silently ignored at load).
+- `doctor` now **probes the transcript contract** instead of pinning exact CLI versions. It runs
+  overseer's own readers against the newest on-disk session and warns only on a real parse failure
+  (turns present but the reply is unreadable), so a harmless patch bump is silent while an actual
+  layout change is caught — on any version, even one previously "tested". Removed the
+  `TESTED_CLAUDE_VERSION` / `TESTED_CODEX_VERSION` baselines and the every-release bump they forced;
+  `doctor` still prints the running versions for reference.
 
 ## [0.5.2] - 2026-07-19
 
