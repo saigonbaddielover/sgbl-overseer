@@ -111,3 +111,12 @@ _deliver() {
   fi
   _paste_verified "$pane" "$msg"
 }
+_submit() {
+  local pane="$1" i
+  for i in $(seq 1 8); do
+    tmux send-keys -t "$pane" Enter
+    _nap
+    [ -z "$(_realtext "$pane")" ] && return 0
+  done
+  [ -z "$(_realtext "$pane")" ]
+}

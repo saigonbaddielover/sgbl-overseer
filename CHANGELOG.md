@@ -5,6 +5,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-19
+
+### Fixed
+- **Multi-line replies and prompts are no longer truncated to their last line.** `read`/`chat`/`wait`
+  read the reply and the echoed prompt whole again. The readers selected the last transcript entry with
+  `... | tail -1`, which operates on physical lines, so a reply spanning several lines collapsed to only
+  its final line. They now slurp the entries and take the last one intact (Claude and Codex, reply and
+  prompt paths). This was the common case — most agent replies are multi-line.
+- **`send`/`chat` now confirm the message actually submitted.** After the paste they fired a single
+  `Enter`; one arriving mid-paste-render is dropped by the TUI, leaving the message sitting unsent in the
+  box — most reliably reproduced on the first (long, wrapping) message to a just-launched agent, where
+  `chat` would then wait out its whole timeout for a reply that was never requested. Submission is now
+  verify-driven (`_submit`): press `Enter`, confirm the box emptied, retry until it does, matching how
+  every other step self-verifies.
+
+### Changed
+- `TESTED_CLAUDE_VERSION` bumped to `2.1.215` (re-verified live against it); the 0-turn `chat` error no
+  longer hard-codes "claude" for what may be a Codex session.
+
 ## [0.5.0] - 2026-07-19
 
 ### Added
