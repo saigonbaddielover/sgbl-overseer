@@ -16,6 +16,18 @@ _is_active() {
   tmux capture-pane -e -p -t "$pane" 2>/dev/null \
     | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›] *${ne}"
 }
+_awaiting() {
+  local pane="$1" cap
+  cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
+  printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›▶][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
+  printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯›▶ ]*[0-9]+[.)][[:space:]]' \
+    | grep -vE '^--$|^[[:space:]]*$' | tail -10
+}
+_report_awaiting() {
+  local pane="$1" target="$2"
+  printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer keys %s <n>        (choose a numbered option; add "overseer keys %s Enter" if it needs confirming)\n  overseer send %s "<text>"   (type free-text into the prompt)\n  overseer read %s\n' \
+    "$(_awaiting "$pane")" "$target" "$target" "$target" "$target"
+}
 # ---- live input line inspection (send path) --------------------------------
 # the live input line. prefer the row under the cursor (#{cursor_y}) so a menu/autocomplete that
 # also draws a ❯ below the box can't be mistaken for the prompt; fall back to the bottom-most ❯ line.

@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-19
+
+### Added
+- **Awaiting-input detection.** `wait` and `chat` now notice when the agent is blocked on an
+  interactive prompt — a permission dialog, a plan approval, a select menu — instead of treating it as
+  a still-running turn and hanging until timeout. They return immediately with the question, its
+  options, and how to answer (`keys`/`menu` to pick, `send` to type free-text, then `read`). Detection
+  is on-screen: a cursor (`❯`/`›`/`▶`) on a numbered option row, so it covers both Claude and Codex.
+  Answering a prompt can reveal the next one (plan approval → per-edit permission → shell approval);
+  each `wait` surfaces the next, so the whole approve-as-you-go loop is drivable from outside.
+
+### Fixed
+- `wait`/`chat` no longer abort silently under `set -e` when the wait returns a non-zero status
+  (the awaiting/timeout codes are now captured with `|| rc=$?`).
+
 ## [0.4.1] - 2026-07-18
 
 ### Added

@@ -60,7 +60,7 @@ _signal_since() {   # sid since_epoch
 # every ~2s so a session the hook does not cover still resolves. codex: no hook, so poll the rollout
 # every tick. args: kind, transcript_path, baseline_turn_count, timeout_s, [claude sid], [since_epoch].
 _wait_reply() {
-  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" i=0 woke=0
+  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" i=0 woke=0
   local deadline=$((SECONDS + timeout))
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$kind" = claude ] && [ "$woke" = 0 ] && [ -n "$sid" ] && _signal_since "$sid" "$since" && woke=1
@@ -69,6 +69,7 @@ _wait_reply() {
     if { [ "$woke" = 1 ] || [ "$kind" = codex ] || [ $((i % 8)) -eq 0 ]; } && [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ]; then
       return 0
     fi
+    [ -n "$pane" ] && [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ] && _awaiting "$pane" >/dev/null 2>&1 && return 2
     i=$((i + 1)); _nap
   done
   return 1
