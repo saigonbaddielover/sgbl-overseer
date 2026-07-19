@@ -67,7 +67,7 @@ cmd_send() {
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }
   fi
-  tmux send-keys -t "$pane" Enter
+  _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   printf 'sent to %s:\n%s\n' "$pane" "$msg"
 }
 # send + wait for the turn to finish + print the reply (the human round-trip).
@@ -82,7 +82,7 @@ cmd_chat() {
   local timeout="${3:-600}"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
-  [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new claude session with 0 turns has none) — send its first message with: overseer send $target '<msg>' (send needs no transcript); after one turn chat/read/wait work"
+  [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none) — send its first message with: overseer send $target '<msg>' (send needs no transcript); after one turn chat/read/wait work"
   [ "$force" = 0 ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
 
   local sid base since; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl); base=$(_h_turn_count "$kind" "$path")
@@ -92,7 +92,7 @@ cmd_chat() {
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }
   fi
   since=$(date +%s)
-  tmux send-keys -t "$pane" Enter
+  _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
   local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
   case "$rc" in

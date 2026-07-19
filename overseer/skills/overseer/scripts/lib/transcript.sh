@@ -11,7 +11,7 @@ _last_stop() { jq -r 'select(.type=="assistant") | .message.stop_reason // empty
 _is_busy() { [ "$(_last_stop "$1")" = tool_use ]; }
 _last_prompt() {
   local jl="$1" p
-  p=$(jq -r 'select(.type=="last-prompt") | .lastPrompt' "$jl" 2>/dev/null | tail -1)
+  p=$(jq -rs '[ .[] | select(.type=="last-prompt") | .lastPrompt ] | last // empty' "$jl" 2>/dev/null)
   if [ -z "$p" ] || [ "$p" = null ]; then
     # pasted prompts have no last-prompt entry; take the last real user string message
     # whole (message-wise, so multi-line content is preserved intact).
@@ -22,7 +22,7 @@ _last_prompt() {
   printf '%s' "$p"
 }
 _last_reply() {
-  jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' "$1" 2>/dev/null | tail -1
+  jq -rs '[ .[] | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n")) ] | last // ""' "$1" 2>/dev/null
 }
 # ---- Codex rollout readers (~/.codex/sessions/**/rollout-*.jsonl) ----------
 # a Codex turn is an `event_msg` task_started ... task_complete pair; task_complete even carries the
@@ -36,11 +36,11 @@ _cx_is_busy() {
   ct=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' "$1" 2>/dev/null | wc -l)
   [ "${st:-0}" -gt "${ct:-0}" ]
 }
-_cx_last_reply() { jq -r 'select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty' "$1" 2>/dev/null | tail -1; }
+_cx_last_reply() { jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty ] | last // ""' "$1" 2>/dev/null; }
 _cx_last_prompt() {
-  jq -r 'select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
+  jq -rs '[ .[] | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
          | .payload.content[]? | select(.type=="input_text") | .text
-         | select(test("^\\s*[<#{]")|not)' "$1" 2>/dev/null | tail -1
+         | select(test("^\\s*[<#{]")|not) ] | last // empty' "$1" 2>/dev/null
 }
 # ---- harness-dispatched reads (kind, transcript_path) ----------------------
 _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count "$2" ;; esac; }
