@@ -94,22 +94,30 @@ cmd_chat() {
   since=$(date +%s)
   tmux send-keys -t "$pane" Enter
   printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
-  if _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since"; then
-    printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"
-  else
-    _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target"
-  fi
+  local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
+  case "$rc" in
+    0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
+       else printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"; fi ;;
+    2) _report_awaiting "$pane" "$target" ;;
+    *) _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target" ;;
+  esac
 }
 cmd_wait() {
   _need tmux; _need jq
   local target="${1:-}" timeout="${2:-600}"; [ -n "$target" ] || _die "usage: overseer wait <pane|session> [timeout_s]"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
+  if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; return 0; fi
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
   if _h_is_busy "$kind" "$path"; then
-    local sid; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
-    _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" && echo "idle" || _die "timeout after ${timeout}s"
+    local sid rc; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
+    rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" || rc=$?
+    case "$rc" in
+      0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
+      2) _report_awaiting "$pane" "$target" ;;
+      *) _die "timeout after ${timeout}s" ;;
+    esac
   else
     echo "idle"
   fi
@@ -166,19 +174,22 @@ cmd_sh() {
 cmd_quit() {
   _need tmux
   local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer quit <pane|session>"
-  local pane cur; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
-  cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)
-  [ "$cur" = claude ] || _die "pane $pane is running '$cur', not claude; nothing to quit"
+  local pane pp kind; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
+  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
+  kind=$(_harness_of "$pp") || _die "pane $pane is running '$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)', not a claude/codex agent; nothing to quit"
   _clear_box "$pane" || true
-  tmux send-keys -t "$pane" C-c; _nap; tmux send-keys -t "$pane" C-c
+  tmux send-keys -t "$pane" C-c
+  [ "$kind" = claude ] && { _nap; tmux send-keys -t "$pane" C-c; }
   local i now
   for i in $(seq 1 20); do
     now=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)
-    [ "$now" != claude ] && { printf 'claude exited; pane %s is now: %s\n' "$pane" "$now"; return 0; }
-    [ "$i" = 8 ] && { tmux send-keys -t "$pane" C-c; _nap; tmux send-keys -t "$pane" C-c; }  # mid-turn: interrupt first, then exit
+    case "$now" in
+      bash|zsh|sh|fish|dash|ksh|-bash|-zsh|-sh) printf '%s exited; pane %s is now: %s\n' "$kind" "$pane" "$now"; return 0 ;;
+    esac
+    [ "$i" = 8 ] && { tmux send-keys -t "$pane" C-c; [ "$kind" = claude ] && { _nap; tmux send-keys -t "$pane" C-c; }; }
     _nap
   done
-  _die "sent Ctrl-C x2 but pane $pane still shows claude (peek it — maybe mid-turn or a dialog is open)"
+  _die "sent Ctrl-C but pane $pane still shows '$now' (peek it — maybe mid-turn or a dialog is open)"
 }
 # invoke a Claude slash command in a pane (/resume, /clear, /model, ...). send/chat can't: they
 # prepend a space so a leading / stays literal text; this types it AS a command and submits. commands
@@ -189,16 +200,16 @@ cmd_slash() {
   [ -n "$target" ] && [ -n "$slash" ] || _die "usage: overseer slash <pane|session> </command>"
   case "$slash" in /*) : ;; *) slash="/$slash" ;; esac   # accept 'resume' or '/resume'
   case "$slash" in *$'\n'*) _die "one slash command line only" ;; esac
-  local pane cur; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
-  cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)
-  [ "$cur" = claude ] || _die "pane $pane is running '$cur', not claude; slash commands need a claude TUI"
+  local pane pp kind; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
+  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
+  kind=$(_harness_of "$pp") || _die "pane $pane is not a claude/codex agent; slash commands need an agent TUI"
   _clear_box "$pane" || _die "could not clear the input box"
   tmux send-keys -t "$pane" -l "$slash"
   local i got; for i in $(seq 1 40); do [ "$(_realtext "$pane")" = "$slash" ] && break; _nap; done
   got=$(_realtext "$pane")
   [ "$got" = "$slash" ] || { _clear_box "$pane"; _die "input shows '$got', expected '$slash'"; }
   tmux send-keys -t "$pane" Enter
-  printf 'ran %s in %s — peek it (a menu like /resume needs keys to navigate: Up/Down, Enter, Esc)\n' "$slash" "$pane"
+  printf 'ran %s in %s (harness=%s) — peek it (a menu needs keys to navigate: Up/Down, Enter, Esc)\n' "$slash" "$pane" "$kind"
 }
 # navigate a tab bar / highlighted list so <name> becomes the active item, then stop. verify-driven:
 # press ONE nav key, re-read the highlight, repeat until <name> is active or we have cycled — never

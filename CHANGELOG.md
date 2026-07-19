@@ -5,6 +5,47 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-19
+
+### Added
+- **Awaiting-input detection.** `wait` and `chat` now notice when the agent is blocked on an
+  interactive prompt — a permission dialog, a plan approval, a select menu — instead of treating it as
+  a still-running turn and hanging until timeout. They return immediately with the question, its
+  options, and how to answer (`keys`/`menu` to pick, `send` to type free-text, then `read`). Detection
+  is on-screen: a cursor (`❯`/`›`/`▶`) on a numbered option row, so it covers both Claude and Codex.
+  Answering a prompt can reveal the next one (plan approval → per-edit permission → shell approval);
+  each `wait` surfaces the next, so the whole approve-as-you-go loop is drivable from outside.
+
+### Fixed
+- `wait`/`chat` no longer abort silently under `set -e` when the wait returns a non-zero status
+  (the awaiting/timeout codes are now captured with `|| rc=$?`).
+
+## [0.4.1] - 2026-07-18
+
+### Added
+- **`menu` now works on Codex too**, completing harness parity — every command except the
+  shell-only `sh` drives both agents. Codex marks its active popup row with a bold cyan pointer
+  (`ESC[1m ESC[38;5;6m ›`) rather than Claude's reverse-video, so `_is_active` now also recognizes that
+  style. Codex popups (`/model`, `/approvals`, ...) are vertical: pass `Down` as the nav key.
+
+## [0.4.0] - 2026-07-18
+
+### Added
+- **Codex parity for `quit` and `slash`.** Both now auto-detect the harness and adapt: `quit` sends the
+  right number of Ctrl-C taps (Claude two, Codex one) and confirms the pane returned to a shell; `slash`
+  types a slash command into either TUI. Only `menu` stays Claude-only.
+- Codex is now detected by a descendant process named `codex` (not by an open rollout fd), so a **0-turn
+  Codex** — still at `Context 0%`, before it has opened a rollout file — is discovered by `list`, and
+  driven by `send`/`slash`/`quit`. `read`/`chat`/`wait` still need one turn (no transcript before that),
+  matching Claude's 0-turn behavior.
+
+### Changed
+- Docs (README + skill) note Codex specifics: quitting takes a single Ctrl-C; **interrupt a running
+  Codex turn with `Escape`, not Ctrl-C** (Ctrl-C quits Codex when idle); a Codex approval prompt is
+  answered with a letter key (`y`/`a`/`d`) via `keys`.
+
+## [0.3.1] - 2026-07-18
+
 ### Changed
 - Internal: split the `overseer` script into a thin entry point that sources `scripts/lib/`
   (`discovery.sh`, `transcript.sh`, `tui.sh`, `commands.sh`). No behavior change; the largest file

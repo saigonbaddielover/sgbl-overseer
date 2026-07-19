@@ -65,12 +65,12 @@ All work goes through one script; the agent calls it as
 | `list [--all]` | List agent panes + their **HARNESS** (claude/codex). `--all`: every pane + its foreground command. |
 | `read <target>` | Print the last user prompt + last assistant reply from the agent's transcript (Claude or Codex, auto-detected). |
 | `peek [raw] <target> [lines]` | Dump the pane's current screen. `raw` keeps ANSI colors (see the active tab/selection). |
-| `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. |
+| `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. If the agent stops at a prompt, returns its question + how to answer instead. |
 | `send [--yes\|--force] <target> <msg\|->` | **Agent (Claude/Codex).** Place + submit the message, don't wait. |
-| `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes. |
-| `quit <target>` | **Claude only.** Exit the TUI (two Ctrl-C), revealing the shell, keeping tmux/pane alive. |
-| `slash <target> </cmd>` | **Claude only.** Run a slash command (`/resume`, `/model`, ...) that `send`/`chat` can't. |
-| `menu <target> <item> [nav-key]` | **Claude only.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). |
+| `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes — or return early if the agent stops at a prompt awaiting input. |
+| `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
+| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. |
+| `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
 | `doctor` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. |
@@ -85,8 +85,13 @@ message to read a long, multi-line prompt from stdin.
 - **Turn completion** (`chat`/`wait`) comes from the transcript, never the on-screen spinner (a
   finished turn leaves a stale spinner line): for Claude, an assistant message whose `stop_reason`
   isn't `tool_use`; for Codex, a `task_complete` event in the rollout jsonl.
+- **Blocked on a prompt** is detected from the screen: if the agent stops at a permission / plan /
+  select prompt (a cursor `❯`/`›`/`▶` on a numbered option), `chat`/`wait` return its question +
+  options rather than hanging to timeout — you answer with `keys`/`menu` (pick) or `send` (free-text).
 - **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
-  pane holds its `~/.codex/sessions/**/rollout-*.jsonl` open (read straight off `/proc/<pid>/fd`).
+  pane has a descendant process named `codex` (so a 0-turn Codex is detected before it opens a rollout).
+  Codex's transcript is the `~/.codex/sessions/**/rollout-*.jsonl` the process holds open, read straight
+  off `/proc/<pid>/fd`.
 - **`sh` completion** is a unique sentinel line appended after the command — prompt-agnostic, no `PS1`
   assumption. Pagers are neutralized and stdin is `/dev/null`, so `git log`/`man`/`cat` won't hang.
 
