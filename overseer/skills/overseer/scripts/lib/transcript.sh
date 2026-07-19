@@ -76,3 +76,21 @@ _wait_reply() {
   done
   return 1
 }
+_newest_transcript() {
+  case "$1" in
+    claude) ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -1 ;;
+    codex)  ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1 ;;
+  esac
+}
+_probe_contract() {
+  local kind="$1" jl raw
+  jl=$(_newest_transcript "$kind")
+  [ -n "$jl" ] || return 2
+  printf '%s' "$jl"
+  case "$kind" in
+    claude) raw=$(grep -c '"type":"assistant"' "$jl" 2>/dev/null || true) ;;
+    codex)  raw=$(grep -c '"task_complete"' "$jl" 2>/dev/null || true) ;;
+  esac
+  [ "${raw:-0}" -gt 0 ] || return 3
+  [ -n "$(_h_last_reply "$kind" "$jl")" ] || return 1
+}
