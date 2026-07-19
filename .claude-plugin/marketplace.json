@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "sgbl",
   "description": "Claude Code tools by saigonbaddielover — starting with overseer.",
   "owner": { "name": "saigonbaddielover" },
@@ -6,7 +7,6 @@
     {
       "name": "overseer",
       "source": "./overseer",
-      "displayName": "Overseer",
       "category": "development",
       "description": "One agent that oversees others: drive/read other agent sessions (Claude Code, Codex) and shells in tmux panes, turn-based. Linux + tmux.",
       "version": "0.5.2",
