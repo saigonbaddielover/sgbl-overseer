@@ -12,6 +12,7 @@ TESTED_CODEX_VERSION=0.144.5
 
 _die() { printf 'overseer: %s\n' "$1" >&2; exit 1; }
 _need() { command -v "$1" >/dev/null 2>&1 || _die "missing dependency: $1"; }
+_uint() { case "${1:-}" in ''|*[!0-9]*) _die "timeout must be a whole number of seconds, got: '${1:-}'" ;; esac; }
 _nap() { sleep 0.25; }   # poll throttle
 
 _dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

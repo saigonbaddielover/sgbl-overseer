@@ -4,8 +4,9 @@
 # For a pane shell pid, return the child pid that owns a ~/.claude/sessions/<pid>.json
 _agent_pid() {
   local pane_pid="$1" c
-  for c in $(cat "/proc/$pane_pid/task/$pane_pid/children" 2>/dev/null); do
-    [ -f "$CLAUDE_HOME/sessions/$c.json" ] && { printf '%s' "$c"; return 0; }
+  for c in "$pane_pid" $(cat "/proc/$pane_pid/task/$pane_pid/children" 2>/dev/null); do
+    [ -f "$CLAUDE_HOME/sessions/$c.json" ] || continue
+    [ "$(cat "/proc/$c/comm" 2>/dev/null)" = claude ] && { printf '%s' "$c"; return 0; }
   done
   return 1
 }

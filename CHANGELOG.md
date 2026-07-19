@@ -5,6 +5,41 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-19
+
+Fixes from a full live + static audit of the interaction surface.
+
+### Fixed
+- **Interrupting a Codex turn (Escape) no longer wedges the session as permanently "busy".** Codex
+  writes a `turn_aborted` event on interrupt but no `task_complete`, so the started>completed count
+  stayed unbalanced forever — `wait` then hung to timeout and `send`/`chat` refused every future turn
+  (even completed ones) until `--force`. Busy is now `task_started > task_complete + turn_aborted`.
+- **`wait`/`chat` no longer mis-report "awaiting input" on a normal reply** that happens to contain a
+  line like `▶ 1. …`. `_awaiting` now requires a real prompt cursor (`❯`/`›`) on a numbered row **and**
+  at least two numbered options — a menu/permission prompt, not one stray glyph line in the answer.
+- **`read`/`chat` no longer show a STALE prompt when your actual message starts with `<`, `{` (Claude)
+  or `<`, `#`, `{` (Codex).** The prompt readers filtered those as injected-wrapper lines. They now read
+  the harness's real user-input signal instead: Claude's `origin.kind == "human"` records, and Codex's
+  `user_message` events — neither of which the AGENTS.md / `<INSTRUCTIONS>` / notification wrappers set.
+- **Concurrent `overseer` invocations on different panes no longer clobber each other's paste.** The
+  tmux paste buffer was a shared constant; it is now per-process (`overseer_paste_$$`).
+- **A non-numeric `timeout` is rejected up front** (`chat/wait/sh … 30s`) instead of being read as 0 —
+  which sent the message and then died "timeout", tempting a double-send.
+- Claude pane detection now requires the session-owning process to actually be `claude` (guards against a
+  stale `sessions/<pid>.json` + PID reuse) and also matches an `exec`-launched claude (pane pid itself).
+- `menu` cycle-detection ignores the volatile bottom status lines (token/context counters) so a live
+  counter no longer defeats the "screen repeated → stop" check.
+- `sh`/`quit` fail with a message instead of a bare `set -e` abort if the pane vanishes mid-lookup.
+- Multi-line paste verification accepts either chip convention (`+M` = newline count or line count).
+
+### Known / not fixed (documented)
+- Concurrent human-and-agent driving of the same pane has a sub-second window where a turn already in
+  flight is not yet visible as "busy"; prefer `read`/`wait` over `chat` on a pane a human is actively
+  typing in.
+- The leading-`/ ! # @` space-guard can leave one leading space in the delivered message (Claude does not
+  always trim it); the message still arrives as text. `menu` on a numbered popup (e.g. Claude `/model`)
+  can't bridge the `N.` prefix — use `keys <n>` for numbered prompts.
+
 ## [0.5.1] - 2026-07-19
 
 ### Fixed

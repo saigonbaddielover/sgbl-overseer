@@ -11,13 +11,9 @@ _last_stop() { jq -r 'select(.type=="assistant") | .message.stop_reason // empty
 _is_busy() { [ "$(_last_stop "$1")" = tool_use ]; }
 _last_prompt() {
   local jl="$1" p
-  p=$(jq -rs '[ .[] | select(.type=="last-prompt") | .lastPrompt ] | last // empty' "$jl" 2>/dev/null)
+  p=$(jq -rs '[ .[] | select(.type=="user" and (.origin.kind? == "human") and (.message.content|type=="string")) | .message.content ] | last // empty' "$jl" 2>/dev/null)
   if [ -z "$p" ] || [ "$p" = null ]; then
-    # pasted prompts have no last-prompt entry; take the last real user string message
-    # whole (message-wise, so multi-line content is preserved intact).
-    p=$(jq -rs '[ .[] | select(.type=="user" and (.message.content|type=="string"))
-                     | .message.content | select(test("^\\s*[<{]")|not) ] | last // empty' \
-        "$jl" 2>/dev/null)
+    p=$(jq -rs '[ .[] | select(.type=="last-prompt") | .lastPrompt ] | last // empty' "$jl" 2>/dev/null)
   fi
   printf '%s' "$p"
 }
@@ -31,16 +27,22 @@ _last_reply() {
 # injected AGENTS.md `#...` / `<environment_context>` wrappers, like the claude reader does).
 _cx_turn_count() { local n; n=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' "$1" 2>/dev/null | wc -l); echo "${n:-0}"; }
 _cx_is_busy() {
-  local st ct
+  local st ct ab
   st=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_started")' "$1" 2>/dev/null | wc -l)
   ct=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' "$1" 2>/dev/null | wc -l)
-  [ "${st:-0}" -gt "${ct:-0}" ]
+  ab=$(jq -c 'select(.type=="event_msg" and .payload.type=="turn_aborted")' "$1" 2>/dev/null | wc -l)
+  [ "${st:-0}" -gt "$(( ${ct:-0} + ${ab:-0} ))" ]
 }
 _cx_last_reply() { jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty ] | last // ""' "$1" 2>/dev/null; }
 _cx_last_prompt() {
-  jq -rs '[ .[] | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
-         | .payload.content[]? | select(.type=="input_text") | .text
-         | select(test("^\\s*[<#{]")|not) ] | last // empty' "$1" 2>/dev/null
+  local p
+  p=$(jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="user_message") | .payload.message ] | last // empty' "$1" 2>/dev/null)
+  if [ -z "$p" ] || [ "$p" = null ]; then
+    p=$(jq -rs '[ .[] | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
+           | .payload.content[]? | select(.type=="input_text") | .text
+           | select(test("^\\s*[<#{]")|not) ] | last // empty' "$1" 2>/dev/null)
+  fi
+  printf '%s' "$p"
 }
 # ---- harness-dispatched reads (kind, transcript_path) ----------------------
 _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count "$2" ;; esac; }

@@ -79,7 +79,7 @@ cmd_chat() {
   [ -n "$target" ] || _die "usage: overseer chat [--yes] [--force] <pane|session> <message|-> [timeout_s]"
   msg=$(_read_msg "${2:-}")
   [ -n "$msg" ] || _die "usage: overseer chat [--yes] [--force] <pane|session> <message|-> [timeout_s]  (empty message)"
-  local timeout="${3:-600}"
+  local timeout="${3:-600}"; _uint "$timeout"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none) — send its first message with: overseer send $target '<msg>' (send needs no transcript); after one turn chat/read/wait work"
@@ -105,6 +105,7 @@ cmd_chat() {
 cmd_wait() {
   _need tmux; _need jq
   local target="${1:-}" timeout="${2:-600}"; [ -n "$target" ] || _die "usage: overseer wait <pane|session> [timeout_s]"
+  _uint "$timeout"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; return 0; fi
@@ -129,10 +130,11 @@ cmd_sh() {
   _need tmux
   local target="${1:-}" cmd="${2:-}" timeout="${3:-600}"
   [ -n "$target" ] && [ -n "$cmd" ] || _die "usage: overseer sh <pane|session> <command> [timeout_s]"
+  _uint "$timeout"
   case "$cmd" in *$'\n'*) _die "one command line only (chain with ; or &&)" ;; esac
   local pane cur
   pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
-  cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)
+  cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || _die "pane $pane vanished"
   case "$cur" in
     bash|zsh|sh|fish|dash|ksh|-bash|-zsh|-sh) : ;;
     *) _die "pane $pane is running '$cur', not an idle shell; refusing (try keys/peek, or chat for a claude pane)" ;;
@@ -175,7 +177,7 @@ cmd_quit() {
   _need tmux
   local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer quit <pane|session>"
   local pane pp kind; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
-  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
+  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null) || _die "pane $pane vanished"
   kind=$(_harness_of "$pp") || _die "pane $pane is running '$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null)', not a claude/codex agent; nothing to quit"
   _clear_box "$pane" || true
   tmux send-keys -t "$pane" C-c
@@ -228,7 +230,7 @@ cmd_menu() {
     _is_active "$pane" "$name" && { printf 'active: %s (pane %s)\n' "$name" "$pane"; return 0; }
     # stop when the screen repeats a state already seen: the menu has wrapped a full cycle without
     # the item appearing. handles a short tab bar and a long scrolling list alike, no magic count.
-    sig=$(tmux capture-pane -e -p -t "$pane" 2>/dev/null | cksum | cut -d' ' -f1)
+    sig=$(tmux capture-pane -e -p -t "$pane" 2>/dev/null | head -n -3 | cksum | cut -d' ' -f1)
     [ -n "${seen[$sig]:-}" ] && break
     seen[$sig]=1
     tmux send-keys -t "$pane" "$navkey"
