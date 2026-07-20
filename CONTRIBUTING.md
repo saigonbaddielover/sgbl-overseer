@@ -31,10 +31,25 @@ claude plugin validate --strict .             # the marketplace
 bash -n overseer/skills/overseer/scripts/overseer overseer/skills/overseer/scripts/lib/*.sh
 shellcheck -x -S warning overseer/skills/overseer/scripts/overseer   # -x follows the sourced lib/*.sh
 shellcheck -S warning overseer/hooks/turn-done.sh
-overseer/skills/overseer/scripts/overseer doctor   # runtime preflight
+bash tests/run.sh                                  # parser fixture tests (no tmux needed)
+overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + throwaway-pane round trip
 ```
 
-CI (`.github/workflows/validate.yml`) runs the JSON/version/shellcheck checks on every push and PR.
+## Tests
+
+- **`tests/run.sh`** — asserts the pure transcript/screen parsers against fixtures in `tests/fixtures/`,
+  for both harnesses. No tmux, no agent, fast. This is the drift tripwire; add a fixture + assertion
+  whenever you touch a parser.
+- **`tests/stress.sh`** — exercises the live paths fixtures can't: multi-pane concurrency, per-pane lock
+  serialization, large-rollout reader perf, and mid-turn crash liveness. Needs tmux; the checks above use
+  throwaway *shell* panes, so no Claude/Codex is required. Set `OVERSEER_STRESS_CODEX_PANE=%N` to also
+  assert the Codex `!`-refuse safety against a real Codex pane. Run it by hand when touching the
+  delivery, lock, or reader paths. Reader-perf ceilings are tunable via
+  `OVERSEER_STRESS_PERF_LASTREPLY` / `OVERSEER_STRESS_PERF_TURNS`.
+
+CI (`.github/workflows/validate.yml`) runs two jobs on every push and PR: **validate** (JSON manifests,
+plugin/marketplace version agreement, `bash -n` + shellcheck, `tests/run.sh`) and **stress** (installs
+tmux and runs the harness-free subset of `tests/stress.sh`). Only the Codex `!`-refuse check stays manual.
 
 ## Contribution flow
 
