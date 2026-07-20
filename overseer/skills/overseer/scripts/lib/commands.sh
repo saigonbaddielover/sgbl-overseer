@@ -93,7 +93,7 @@ cmd_chat() {
 
   local sid='' base=0 since
   if [ "$has_tx" = 1 ]; then
-    [ "$kind" = claude ] && sid=$(basename "$path" .jsonl); base=$(_h_turn_count "$kind" "$path")
+    [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path"); base=$(_h_turn_count "$kind" "$path")
   fi
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
   if [ "$confirm" = 1 ]; then
@@ -106,7 +106,7 @@ cmd_chat() {
   if [ "$has_tx" = 0 ]; then
     path=$(_wait_started "$target" "$kind" "$path" 0 30 "$pane") || true
     { [ -z "$path" ] || [ ! -f "$path" ]; } && _die "sent, but no transcript appeared for '$target' within 30s — check it with: overseer peek $target ; then resume: overseer wait $target"
-    [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
+    [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
   fi
   local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
   case "$rc" in
@@ -126,7 +126,7 @@ cmd_wait() {
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
   if _h_is_busy "$kind" "$path"; then
-    local sid rc; sid=''; [ "$kind" = claude ] && sid=$(basename "$path" .jsonl)
+    local sid rc; sid=''; [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
     rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" || rc=$?
     case "$rc" in
       0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
