@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-07-20
+
+### Changed
+- **CI now *runs* the harness-free stress subset, not just lint-checks it.** A new `stress` job installs
+  tmux and executes `tests/stress.sh`, which — with no `OVERSEER_STRESS_CODEX_PANE` set — covers
+  multi-pane concurrency, per-pane lock serialization, large-rollout (~18 MB) reader perf, and mid-turn
+  crash liveness against throwaway shell panes (no Claude/Codex needed). This turns four core properties
+  from *manual-only* into *automated regression gates*. Only the Codex `!`-refuse check (needs a real
+  Codex pane) stays manual. The reader-perf ceilings are env-tunable (`OVERSEER_STRESS_PERF_LASTREPLY`,
+  `OVERSEER_STRESS_PERF_TURNS`) and set generously in CI so a genuine O(n²)-style regression still fails
+  while normal runner variance doesn't.
+
 ## [0.5.14] - 2026-07-20
 
 ### Fixed
