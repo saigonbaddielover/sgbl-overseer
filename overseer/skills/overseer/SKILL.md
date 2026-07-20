@@ -159,8 +159,11 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
 4. Any length is fine (see the intro): everything is placed by bracketed paste and verified before
    submit. For **Claude** a first line starting with `/ ! # @` would open the TUI's
    command/bash/memory/file mode, so the script prepends one space to dodge that — Claude Code trims
-   it back off, so the message still arrives literally. **Codex** does not trim a leading space (and a
-   pasted command does not open its menu), so a Codex message is delivered exactly as given.
+   it back off, so the message still arrives literally. For **Codex** most messages are delivered
+   exactly as given, but a message starting with `!` is **refused** — Codex runs `!…` as a shell
+   command (its design), not as chat; use `sh <target> '<cmd>'` to run a command, or reword the message
+   to not lead with `!`. A message whose text contains an `@`-mention token can pop Codex's file picker;
+   if a send fails to verify on such a message, the picker intercepted it — `peek` + `keys`, or reword.
 5. **`sh` auto-executes the command in the user's shell** the instant it is called (there is no
    confirm gate). Only use it when the user asked you to run that command in the terminal they are
    watching. It refuses any pane that is not an idle shell (so it never types into a running program
