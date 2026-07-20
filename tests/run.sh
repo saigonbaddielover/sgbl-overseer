@@ -55,6 +55,29 @@ eq "is_shell nu"           "0"                         "$(_is_shell nu; echo $?)
 eq "is_shell reject node"  "1"                         "$(_is_shell node; echo $?)"
 eq "is_shell reject claude" "1"                        "$(_is_shell claude; echo $?)"
 
+ENTRY="$HERE/../overseer/skills/overseer/scripts/overseer"
+README="$HERE/../README.md"
+SKILL="$HERE/../overseer/skills/overseer/SKILL.md"
+
+_dispatch_cmds() { sed -nE 's/^[[:space:]]+([a-z]+)\)[[:space:]]+cmd_.*/\1/p' "$ENTRY" | sort -u; }
+_help_cmds()     { bash "$ENTRY" --help 2>/dev/null | sed -nE 's/^  ([a-z]+)[[:space:]]+[<[].*/\1/p' | sort -u; }
+_table_cmds()    { sed -nE 's/^\| `([a-z]+)[ `].*/\1/p' "$1" | sort -u; }
+
+DISPATCH=$(_dispatch_cmds)
+eq "dispatch surface is non-empty" "yes" "$([ -n "$DISPATCH" ] && echo yes || echo no)"
+
+for surface in help README SKILL; do
+  case "$surface" in
+    help)   documented=$(_help_cmds) ;;
+    README) documented=$(_table_cmds "$README") ;;
+    SKILL)  documented=$(_table_cmds "$SKILL") ;;
+  esac
+  missing=$(comm -23 <(printf '%s\n' "$DISPATCH") <(printf '%s\n' "$documented") | tr '\n' ' ')
+  extra=$(comm -13 <(printf '%s\n' "$DISPATCH") <(printf '%s\n' "$documented") | tr '\n' ' ')
+  eq "$surface documents every dispatched command" "" "$(printf '%s' "$missing" | sed 's/ *$//')"
+  eq "$surface documents no command that does not exist" "" "$(printf '%s' "$extra" | sed 's/ *$//')"
+done
+
 if [ "$fail" = 0 ]; then
   printf 'PASS: all parser fixture tests\n'; exit 0
 else

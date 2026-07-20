@@ -1,0 +1,36 @@
+name: autotag
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  autotag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: tag and release the plugin version if it is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pv=$(jq -r .version overseer/.claude-plugin/plugin.json)
+          mv=$(jq -r '.plugins[] | select(.name=="overseer") | .version' .claude-plugin/marketplace.json)
+          if [ "$pv" != "$mv" ]; then
+            echo "::error::plugin.json ($pv) and marketplace.json ($mv) disagree — refusing to tag"
+            exit 1
+          fi
+          tag="overseer--v$pv"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists — nothing to release"
+            exit 0
+          fi
+          git tag "$tag"
+          git push origin "$tag"
+          gh release create "$tag" --generate-notes --latest --verify-tag
+          echo "tagged and released $tag"

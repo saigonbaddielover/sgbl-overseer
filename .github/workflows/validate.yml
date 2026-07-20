@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: JSON manifests are valid
         run: |
@@ -25,6 +27,22 @@ jobs:
           mv=$(jq -r '.plugins[] | select(.name=="overseer") | .version' .claude-plugin/marketplace.json)
           echo "plugin=$pv marketplace=$mv"
           test -n "$pv" && test "$pv" = "$mv"
+
+      - name: a version bump must bring a CHANGELOG entry
+        if: github.event_name == 'pull_request'
+        run: |
+          pv=$(jq -r .version overseer/.claude-plugin/plugin.json)
+          base=$(git show "origin/${{ github.base_ref }}:overseer/.claude-plugin/plugin.json" 2>/dev/null | jq -r .version) || base=""
+          if [ -z "$base" ]; then
+            echo "no baseline plugin.json on origin/${{ github.base_ref }} — skipping"
+          elif [ "$pv" = "$base" ]; then
+            echo "version unchanged ($pv) — no CHANGELOG entry required"
+          elif grep -q "^## \[$pv\]" CHANGELOG.md; then
+            echo "ok: $base -> $pv is documented under '## [$pv]'"
+          else
+            echo "::error::version bumped $base -> $pv but CHANGELOG.md has no '## [$pv]' heading"
+            exit 1
+          fi
 
       - name: shell scripts parse and lint
         run: |
