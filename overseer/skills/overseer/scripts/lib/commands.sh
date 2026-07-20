@@ -368,3 +368,24 @@ cmd_doctor() {
   [ "$live" = 1 ] && { _doctor_live || bad=1; }
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
 }
+cmd_on() {
+  _need ssh
+  local host="${1:-}"; shift || true
+  [ -n "$host" ] && [ "$#" -gt 0 ] || _die "usage: overseer on <host> <command> [args]   (run any overseer command on a remote ssh host, e.g. overseer on sandbox chat %0 'hi')"
+  local bin="${OVERSEER_REMOTE_BIN:-\$HOME/.overseer/scripts/overseer}"
+  local cmdir="${TMPDIR:-/tmp}/overseer-ssh-$UID"
+  mkdir -p "$cmdir" 2>/dev/null || true
+  local rargs; printf -v rargs ' %q' "$@"
+  # shellcheck disable=SC2086
+  exec ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
+    -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "$bin$rargs"
+}
+cmd_deploy() {
+  _need ssh; _need tar
+  local host="${1:-}"; shift || true
+  [ -n "$host" ] || _die "usage: overseer deploy <host>   (copy overseer's scripts to ~/.overseer on a remote ssh host, do this once before 'overseer on <host> ...')"
+  local dest="${OVERSEER_REMOTE_DIR:-.overseer}"
+  # shellcheck disable=SC2086
+  tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
+    && printf 'overseer: deployed scripts to %s:~/%s/\n' "$host" "$dest"
+}

@@ -47,6 +47,8 @@ from stdin.
 | `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses if the pane is not an idle shell. If the output outran the pane's scrollback, it reports the exit code and says the output can't be captured whole — re-run with `> out.txt 2>&1` and read the file. | **SIDE EFFECT** |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `y`, `Up`, `C-c`, ...) to answer a prompt/menu or interrupt. Any pane. | **SIDE EFFECT** |
 | `doctor [--live]` | Preflight the runtime: Linux + `/proc`, `tmux`, `jq`, `claude`/`codex` versions, that on-disk session state is where discovery expects it, and a contract probe that runs the real transcript readers against the newest session. `--live` (also plain `live`) additionally drives a **throwaway** pane through an `sh` round-trip. Exits non-zero if any check fails. Run it first when a pane "can't be found" or a command behaves oddly. | read-only (`--live` spawns and kills its own tmux session) |
+| `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`), so `on <host> …` can run there. `<host>` is any ssh target — `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host; re-run to update. | **SIDE EFFECT** (writes `~/.overseer` on the remote) |
+| `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh — the *whole* program executes remote-side, where its tmux / `/proc` / transcript reads co-locate, so discovery and completion detection work unchanged; only the invocation and the result cross the wire. A blocking `chat`/`wait`/`sh` holds one ssh connection while it polls remote-side (no new event protocol — the remote's own hook markers/transcript are the truth); one-shots reuse a multiplexed master (`ControlMaster`+`ControlPersist`). Pass `--yes` for remote auto-submit — the interactive confirm has no tty over ssh. e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. | inherits the wrapped command's safety |
 
 `chat`/`send`/`wait`/`read` are for an agent TUI — Claude Code or Codex — and read its transcript to
 know a turn ended (auto-detected per pane). `sh` is for a plain shell (it appends a unique sentinel
@@ -104,6 +106,35 @@ Remote-SSH terminal is driven server-side and the user still sees it live). A **
 terminal cannot be driven**: the kernel blocks keystroke injection into a bare PTY
 (`dev.tty.legacy_tiocsti=0`) and its screen buffer lives in the client (e.g. xterm.js on the user's
 machine), not here. To make such a terminal drivable, run it inside tmux.
+
+## Remote hosts (SSH / Tailscale)
+
+To drive a pane on **another Linux machine** (e.g. across a Tailscale tailnet), do not remote each
+tmux/`/proc`/transcript call — run the *whole* overseer program on that host over one ssh call, so all
+of its reads stay co-located there and every command behaves exactly as it does locally:
+
+```
+overseer deploy sandbox                       # once: copy scripts to sandbox:~/.overseer (ssh+tar)
+overseer on sandbox doctor                    # remote preflight — the real gate (tmux + an agent + jq)
+overseer on sandbox list                      # discover the remote panes
+overseer on sandbox chat --yes %0 'hi'        # drive the remote agent; the reply streams back
+overseer on sandbox sh %3 'git pull'          # or drive a remote shell pane
+```
+
+- `<host>` is any ssh target: a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name.
+  Identity/credentials are ssh's own (`~/.ssh`, agent, config) — overseer stores nothing and needs no
+  daemon, DB, or token store. It only adds `ControlMaster`+`ControlPersist` so a burst of one-shot
+  commands reuses one connection instead of re-handshaking.
+- A blocking `chat`/`wait`/`sh` runs its poll loop **on the remote** (reading that host's own transcript
+  and hook markers — the same truth signals as local), and ssh just holds the pipe until it returns. No
+  separate event/streaming channel exists or is needed.
+- Pass `--yes` for a remote `chat`/`send`: without a tty the interactive confirm can't prompt, so it
+  fails closed (never submits) instead.
+- Preconditions to actually drive a remote agent: that host has tmux, a running claude/codex, and your
+  ssh key — exactly what `overseer on <host> doctor` verifies. Overrides: `OVERSEER_REMOTE_BIN` (remote
+  overseer path, default `~/.overseer/scripts/overseer`), `OVERSEER_SSH` / `OVERSEER_SSH_OPTS`.
+- Native **Windows** is out of scope (no `/proc`, no native tmux); run the agent inside **WSL2** and
+  treat that as an ordinary Linux target.
 
 ## How completion is detected
 

@@ -44,6 +44,8 @@ main() {
     slash) cmd_slash "$@" ;;
     menu) cmd_menu "$@" ;;
     doctor) cmd_doctor "$@" ;;
+    on) cmd_on "$@" ;;
+    deploy) cmd_deploy "$@" ;;
     ''|-h|--help)
       printf 'usage: overseer <command> [args]   (t = tmux pane id %%N or session name)\n'
       printf '  agent = a Claude Code OR Codex session; read/chat/send/wait auto-detect which.\n'
@@ -60,6 +62,8 @@ main() {
       printf '  sh    <t> <command> [timeout]        shell pane: run one line, wait, print output+exit\n'
       printf '  keys  <t> <key>...         raw keys to answer prompts/menus (Enter Escape y Up C-c ...)\n'
       printf '  doctor [--live]            preflight: Linux/proc, tmux, jq, session state; --live also drives a throwaway pane\n'
+      printf '  deploy <host>              copy overseer to ~/.overseer on a remote ssh host (once, before "on")\n'
+      printf '  on    <host> <command> [args]  run any overseer command on a remote ssh host (ControlPersist-reused; e.g. on sandbox chat %%0 hi)\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;
     *) _die "unknown command: $cmd" ;;

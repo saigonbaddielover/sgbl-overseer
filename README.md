@@ -79,6 +79,8 @@ All work goes through one script; the agent calls it as
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
 | `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
+| `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host (re-run to update). |
+| `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
@@ -88,6 +90,26 @@ Two environment variables tune the defaults (both validated at startup, so a bad
 `OVERSEER_POLL_INTERVAL` (default `0.25`) is the poll cadence in seconds. Two more point overseer at
 non-default state directories: `CLAUDE_HOME` (default `~/.claude`) and `CODEX_HOME` (default `~/.codex`),
 used to find session files, transcripts and the hook markers.
+
+## Remote (SSH / Tailscale)
+
+To drive a pane on another Linux box — e.g. across a Tailscale tailnet — run the whole overseer program
+on that host over ssh, so its tmux/`/proc`/transcript reads stay co-located and every command behaves as
+it does locally. Deploy once, then prefix any command with `on <host>`:
+
+```
+overseer deploy sandbox                  # copy scripts to sandbox:~/.overseer (ssh + tar)
+overseer on sandbox doctor               # remote preflight: tmux + a running agent + jq + ssh key
+overseer on sandbox chat --yes %0 'hi'   # drive the remote agent; the reply streams back
+```
+
+`<host>` is any ssh target (a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name);
+credentials are ssh's own — no daemon, DB, or token store. overseer adds `ControlMaster`+`ControlPersist`
+so bursts of one-shot commands reuse one connection. A blocking `chat`/`wait`/`sh` polls remote-side and
+ssh just holds the pipe, so no separate event channel is needed. Pass `--yes` for a remote `chat`/`send`:
+without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVERSEER_REMOTE_BIN`
+(default `~/.overseer/scripts/overseer`), `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`. Native Windows is out of
+scope (no `/proc`, no native tmux) — run the agent inside WSL2 and target that as ordinary Linux.
 
 ## How it works
 
