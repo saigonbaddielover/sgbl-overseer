@@ -1,0 +1,7 @@
+{"type":"user","sessionId":"test-sid-123","origin":{"kind":"human"},"message":{"content":"first prompt"}}
+{"type":"assistant","sessionId":"test-sid-123","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]}}
+{"type":"user","sessionId":"test-sid-123","message":{"content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"assistant","sessionId":"test-sid-123","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"first reply"}]}}
+{"type":"user","sessionId":"test-sid-123","origin":{"kind":"human"},"message":{"content":"second prompt"}}
+{"type":"user","sessionId":"test-sid-123","message":{"content":"<local-command-stdout>injected wrapper, not a human prompt</local-command-stdout>"}}
+{"type":"assistant","sessionId":"test-sid-123","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"final reply\nsecond line"}]}}

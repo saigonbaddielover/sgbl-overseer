@@ -5,7 +5,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.5.6] - 2026-07-20
+## [0.5.7] - 2026-07-20
+
+### Added
+- **Parser regression tests** (`tests/run.sh` + `tests/fixtures/`), run in CI. They assert the pure
+  transcript/screen parsers against hand-built fixtures — turn counting, busy detection, last
+  reply/prompt (incl. multi-line and injected-wrapper exclusion), `sessionId` extraction, incremental
+  `_turns_after`, and awaiting-prompt detection for **both** Claude (`❯`) and Codex (`›`) menus plus a
+  negative case. This is the drift signal that was missing: an upstream on-disk/TUI change now fails CI
+  instead of surfacing at runtime. No live tmux needed.
+
+### Changed
+- **`last reply` / `last prompt` readers stream the transcript** (`jq -n 'last(inputs | …)'`) instead of
+  slurping the whole file into an array (`jq -s`), so a large session is read in near-constant memory.
+  Verified byte-identical to the old readers across 16 real Claude + Codex transcripts and the fixtures.
+- **`_awaiting` split into a pure `_awaiting_text`** (screen text in, verdict out) plus a thin
+  `capture-pane` wrapper, so the awaiting-prompt logic is unit-testable. No behavior change; confirms the
+  existing regex already covers Codex's `›`-cursor numbered menus.
 
 ### Changed
 - **Turn detection in the wait loops now reads only the bytes appended since the send**, not the whole

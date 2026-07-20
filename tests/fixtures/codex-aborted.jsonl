@@ -1,0 +1,3 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"go"}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"turn_aborted"}}

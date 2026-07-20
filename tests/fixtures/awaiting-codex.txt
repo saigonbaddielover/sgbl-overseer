@@ -1,0 +1,4 @@
+Allow Codex to run this command?
+
+› 1. Yes, run it
+  2. No, and tell Codex what to do differently

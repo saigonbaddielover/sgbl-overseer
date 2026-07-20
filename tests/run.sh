@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+LIB="$HERE/../overseer/skills/overseer/scripts/lib"
+FIX="$HERE/fixtures"
+export CLAUDE_HOME="$HERE/.home" CODEX_HOME="$HERE/.home"
+
+# shellcheck source=../overseer/skills/overseer/scripts/lib/transcript.sh
+. "$LIB/transcript.sh"
+# shellcheck source=../overseer/skills/overseer/scripts/lib/tui.sh
+. "$LIB/tui.sh"
+
+fail=0
+eq() {
+  if [ "$2" = "$3" ]; then
+    printf '  ok   %s\n' "$1"
+  else
+    printf '  FAIL %s\n         expected: [%s]\n         actual:   [%s]\n' "$1" "$2" "$3"
+    fail=$((fail + 1))
+  fi
+}
+
+C="$FIX/claude-turn.jsonl"
+eq "claude turn_count"     "2"                         "$(_turn_count "$C")"
+eq "claude turns_after(0)" "2"                         "$(_turns_after claude "$C" 0)"
+eq "claude not busy"       ""                          "$(_is_busy "$C" && echo busy)"
+eq "claude last_reply"     $'final reply\nsecond line' "$(_last_reply "$C")"
+eq "claude last_prompt"    "second prompt"             "$(_last_prompt "$C")"
+eq "claude sid"            "test-sid-123"              "$(_sid_from_jsonl "$C")"
+
+CB="$FIX/claude-busy.jsonl"
+eq "claude busy"           "busy"                      "$(_is_busy "$CB" && echo busy)"
+eq "claude busy turns"     "0"                         "$(_turn_count "$CB")"
+
+X="$FIX/codex-turn.jsonl"
+eq "codex turn_count"      "1"                         "$(_cx_turn_count "$X")"
+eq "codex turns_after(0)"  "1"                         "$(_turns_after codex "$X" 0)"
+eq "codex not busy"        ""                          "$(_cx_is_busy "$X" && echo busy)"
+eq "codex last_reply"      "codex reply text"          "$(_cx_last_reply "$X")"
+eq "codex last_prompt"     "codex prompt here"         "$(_cx_last_prompt "$X")"
+
+eq "codex busy"            "busy"                      "$(_cx_is_busy "$FIX/codex-busy.jsonl" && echo busy)"
+eq "codex aborted!=busy"   ""                          "$(_cx_is_busy "$FIX/codex-aborted.jsonl" && echo busy)"
+
+eq "awaiting claude"       "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-claude.txt")" >/dev/null 2>&1; echo $?)"
+eq "awaiting codex"        "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-codex.txt")" >/dev/null 2>&1; echo $?)"
+eq "awaiting none"         "1"                         "$(_awaiting_text "$(cat "$FIX/awaiting-none.txt")" >/dev/null 2>&1; echo $?)"
+
+if [ "$fail" = 0 ]; then
+  printf 'PASS: all parser fixture tests\n'; exit 0
+else
+  printf 'FAIL: %s test(s) failed\n' "$fail"; exit 1
+fi

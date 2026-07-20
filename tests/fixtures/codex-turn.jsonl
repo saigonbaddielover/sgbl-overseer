@@ -1,0 +1,5 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"codex prompt here"}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"working"}}
+{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"codex reply text"}}
+{"type":"event_msg","payload":{"type":"token_count"}}

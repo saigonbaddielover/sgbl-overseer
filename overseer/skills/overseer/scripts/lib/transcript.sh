@@ -11,14 +11,14 @@ _last_stop() { jq -r 'select(.type=="assistant") | .message.stop_reason // empty
 _is_busy() { [ "$(_last_stop "$1")" = tool_use ]; }
 _last_prompt() {
   local jl="$1" p
-  p=$(jq -rs '[ .[] | select(.type=="user" and (.origin.kind? == "human") and (.message.content|type=="string")) | .message.content ] | last // empty' "$jl" 2>/dev/null)
+  p=$(jq -rn 'last(inputs | select(.type=="user" and (.origin.kind? == "human") and (.message.content|type=="string")) | .message.content) // empty' "$jl" 2>/dev/null)
   if [ -z "$p" ] || [ "$p" = null ]; then
-    p=$(jq -rs '[ .[] | select(.type=="last-prompt") | .lastPrompt ] | last // empty' "$jl" 2>/dev/null)
+    p=$(jq -rn 'last(inputs | select(.type=="last-prompt") | .lastPrompt) // empty' "$jl" 2>/dev/null)
   fi
   printf '%s' "$p"
 }
 _last_reply() {
-  jq -rs '[ .[] | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n")) ] | last // ""' "$1" 2>/dev/null
+  jq -rn 'last(inputs | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n"))) // ""' "$1" 2>/dev/null
 }
 _sid_from_jsonl() { jq -r 'select(.sessionId != null and .sessionId != "") | .sessionId' "$1" 2>/dev/null | head -1; }
 # ---- Codex rollout readers (~/.codex/sessions/**/rollout-*.jsonl) ----------
@@ -38,14 +38,14 @@ _cx_is_busy() {
   read -r st ct ab <<< "$counts" || true
   [ "${st:-0}" -gt "$(( ${ct:-0} + ${ab:-0} ))" ]
 }
-_cx_last_reply() { jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty ] | last // ""' "$1" 2>/dev/null; }
+_cx_last_reply() { jq -rn 'last(inputs | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty) // ""' "$1" 2>/dev/null; }
 _cx_last_prompt() {
   local p
-  p=$(jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="user_message") | .payload.message ] | last // empty' "$1" 2>/dev/null)
+  p=$(jq -rn 'last(inputs | select(.type=="event_msg" and .payload.type=="user_message") | .payload.message) // empty' "$1" 2>/dev/null)
   if [ -z "$p" ] || [ "$p" = null ]; then
-    p=$(jq -rs '[ .[] | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
+    p=$(jq -rn 'last(inputs | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
            | .payload.content[]? | select(.type=="input_text") | .text
-           | select(test("^\\s*[<#{]")|not) ] | last // empty' "$1" 2>/dev/null)
+           | select(test("^\\s*[<#{]")|not)) // empty' "$1" 2>/dev/null)
   fi
   printf '%s' "$p"
 }

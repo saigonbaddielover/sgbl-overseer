@@ -16,13 +16,17 @@ _is_active() {
   tmux capture-pane -e -p -t "$pane" 2>/dev/null \
     | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›] *${ne}"
 }
-_awaiting() {
-  local pane="$1" cap
-  cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
+_awaiting_text() {
+  local cap="$1"
   printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
   [ "$(printf '%s\n' "$cap" | grep -cE '^[[:space:]]*[❯›]?[[:space:]]*[0-9]+[.)][[:space:]]')" -ge 2 ] || return 1
   printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯› ]*[0-9]+[.)][[:space:]]' \
     | grep -vE '^--$|^[[:space:]]*$' | tail -10
+}
+_awaiting() {
+  local pane="$1" cap
+  cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
+  _awaiting_text "$cap"
 }
 _report_awaiting() {
   local pane="$1" target="$2"
