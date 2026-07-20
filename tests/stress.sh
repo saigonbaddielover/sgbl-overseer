@@ -9,6 +9,8 @@ trap 'rm -rf "$TMP"; for s in "${SESS[@]:-}"; do [ -n "$s" ] && tmux kill-sessio
 export CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 declare -a SESS=()
 pass=0; fail=0
+PERF_LASTREPLY="${OVERSEER_STRESS_PERF_LASTREPLY:-3}"
+PERF_TURNS="${OVERSEER_STRESS_PERF_TURNS:-1}"
 ok(){ printf '  ok   %s\n' "$1"; pass=$((pass+1)); }
 no(){ printf '  FAIL %s\n' "$1"; fail=$((fail+1)); }
 
@@ -43,9 +45,9 @@ POLL_INTERVAL=0.25; _nap(){ sleep "$POLL_INTERVAL"; }
 # shellcheck source=/dev/null
 . "$LIB/discovery.sh"; . "$LIB/transcript.sh"; . "$LIB/tui.sh"
 t0=$(date +%s.%N); _cx_last_reply "$CX" >/dev/null; t1=$(date +%s.%N)
-awk "BEGIN{exit !($t1-$t0 < 3)}" && ok "_cx_last_reply < 3s on $((sz/1024/1024))MB ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_cx_last_reply too slow"
+awk "BEGIN{exit !($t1-$t0 < $PERF_LASTREPLY)}" && ok "_cx_last_reply < ${PERF_LASTREPLY}s on $((sz/1024/1024))MB ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_cx_last_reply too slow (>= ${PERF_LASTREPLY}s)"
 t0=$(date +%s.%N); _turns_after codex "$CX" $((sz-5000)) >/dev/null; t1=$(date +%s.%N)
-awk "BEGIN{exit !($t1-$t0 < 1)}" && ok "_turns_after(near-end offset) < 1s ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_turns_after too slow"
+awk "BEGIN{exit !($t1-$t0 < $PERF_TURNS)}" && ok "_turns_after(near-end offset) < ${PERF_TURNS}s ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_turns_after too slow (>= ${PERF_TURNS}s)"
 
 echo "== E: crash liveness (harness gone -> rc=3, not timeout) =="
 se="ovS_E_$$"; tmux new-session -d -s "$se" -x 80 -y 24 2>/dev/null; SESS+=("$se")
