@@ -179,6 +179,10 @@ cmd_sh() {
   local cap out rc
   cap=$(tmux capture-pane -p -S - -t "$pane" 2>/dev/null)
   rc=$(printf '%s\n' "$cap" | grep -E "^${tok}:[0-9]+$" | tail -1); rc=${rc##*:}
+  if ! printf '%s\n' "$cap" | grep -qF "${tok}B"; then
+    printf '# pane=%s exit=%s\n(the output was longer than the pane scrollback, so its start scrolled out of tmux history and cannot be captured whole; re-run redirecting to a file — append " > out.txt 2>&1" — then read the file)\n' "$pane" "$rc"
+    return 0
+  fi
   out=$(printf '%s\n' "$cap" | awk -v b="${tok}B" -v e="^${tok}:[0-9]+$" '
     $0 == b { s=1; next }
     s && $0 ~ e { exit }
@@ -262,8 +266,7 @@ _doctor_probe() {
   case "$rc" in
     0) n=$(_h_turn_count "$kind" "$jl"); printf '  [ok]   %s transcript readable (overseer parsed %s completed turns from the newest session)\n' "$kind" "$n" ;;
     1) printf '  [warn] %s transcript has completed turns but overseer cannot read the reply — its on-disk schema may have changed (see README caveats): %s\n' "$kind" "$jl" ;;
-    2) printf '  [ok]   no %s transcript on disk yet — nothing to probe\n' "$kind" ;;
-    3) printf '  [ok]   newest %s transcript has no completed turn yet — nothing to probe\n' "$kind" ;;
+    2) printf '  [ok]   no %s session with a completed turn yet — nothing to probe\n' "$kind" ;;
   esac
 }
 # preflight the runtime: the requirements (Linux/proc, tmux, jq) and — crucially — whether Claude
@@ -299,5 +302,10 @@ cmd_doctor() {
   [ -d "$CODEX_HOME/sessions" ] && printf '  [ok]   Codex session state dir present (%s/sessions)\n' "$CODEX_HOME" \
     || printf '  [warn] no %s/sessions — no codex has run yet, or Codex changed its layout\n' "$CODEX_HOME"
   _doctor_probe codex
+  if _awaiting_text "$(printf 'proceed?\n❯ 1. yes\n  2. no\n')" >/dev/null 2>&1; then
+    printf '  [ok]   awaiting-prompt detector matches a sample menu (glyph + locale OK)\n'
+  else
+    printf '  [warn] awaiting-prompt detector failed on a sample menu — check the UTF-8 locale (grep may not match ❯/›); wait/chat could miss permission prompts\n'
+  fi
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
 }

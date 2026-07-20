@@ -118,21 +118,18 @@ _wait_started() {
   done
   printf '%s' "$path"; return 1
 }
-_newest_transcript() {
-  case "$1" in
-    claude) ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -1 ;;
-    codex)  ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -1 ;;
+_newest_with_turns() {
+  local kind="$1" f
+  case "$kind" in
+    claude) for f in $(ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -20); do [ "$(_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done ;;
+    codex)  for f in $(ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -20); do [ "$(_cx_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done ;;
   esac
+  return 1
 }
 _probe_contract() {
-  local kind="$1" jl raw
-  jl=$(_newest_transcript "$kind")
+  local kind="$1" jl
+  jl=$(_newest_with_turns "$kind") || return 2
   [ -n "$jl" ] || return 2
   printf '%s' "$jl"
-  case "$kind" in
-    claude) raw=$(grep -c '"type":"assistant"' "$jl" 2>/dev/null || true) ;;
-    codex)  raw=$(grep -c '"task_complete"' "$jl" 2>/dev/null || true) ;;
-  esac
-  [ "${raw:-0}" -gt 0 ] || return 3
   [ -n "$(_h_last_reply "$kind" "$jl")" ] || return 1
 }

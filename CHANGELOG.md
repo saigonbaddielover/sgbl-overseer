@@ -5,7 +5,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.5.7] - 2026-07-20
+## [0.5.8] - 2026-07-20
+
+### Fixed
+- **`sh` no longer returns silently-empty output when a command outprints the pane scrollback.** If the
+  output was long enough that its start (the begin sentinel) scrolled out of tmux history, `sh` now says so
+  and suggests re-running with the output redirected to a file, instead of printing just the exit code with
+  an empty body that reads like "no output".
+
+### Changed
+- **`doctor`'s contract probe targets the newest session that actually has a completed turn** (scanning up
+  to the 20 newest), instead of the single newest file. A brand-new 0-turn session no longer masks a real
+  schema break in a slightly older session — the probe now always has something meaningful to read when any
+  recent session does.
+- **`doctor` self-checks the awaiting-input detector** against a built-in sample menu, warning if it fails
+  to match — which catches a broken/non-UTF-8 locale where `grep` can't see the `❯`/`›` cursor glyphs (that
+  would otherwise make `wait`/`chat` silently miss permission prompts).
+
+### Docs
+- README caveat: awaiting-input detection covers numbered menus (`❯`/`›` + numbered options), not
+  type-to-filter searchable pickers — `peek` + `keys` those.
 
 ### Added
 - **Parser regression tests** (`tests/run.sh` + `tests/fixtures/`), run in CI. They assert the pure
