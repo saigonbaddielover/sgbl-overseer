@@ -42,11 +42,14 @@ for each before claiming support:
    nanoseconds.
 3. **`flock` is not present on stock macOS** (`tui.sh`: `_lock_pane`). This already degrades gracefully
    (`command -v flock` guards it), so per-pane locking is simply skipped — acceptable, or supply a
-   `flock` shim / use `mkdir`-based locking if you want the guarantee back.
+   `flock` shim / use `mkdir`-based locking if you want the guarantee back. Note the same unlocked
+   fallback is taken on Linux whenever the lock directory or fd can't be opened, or the lock is still
+   contended after the 30s `flock -w` timeout: locking is best-effort by design, never a hard failure.
 4. **Stock macOS ships bash 3.2**, which lacks features overseer uses: associative arrays
    (`local -A seen`, `commands.sh: cmd_menu`) and named-fd redirection (`exec {fd}>…`, `tui.sh:
-   _lock_pane`, bash ≥4.1). Require bash ≥4 (Homebrew `bash`) via the shebang/env, or refactor those two
-   spots. This is the biggest single blocker and must be decided first.
+   _lock_pane`, bash ≥4.1). **This is already decided**: the entry script hard-fails at startup below
+   bash 4.1 with a hint to install a newer bash, and `README.md` lists it as a requirement. A port
+   therefore runs under Homebrew bash; the two spots do not need refactoring.
 5. **`readlink` semantics differ** — only relevant if you reintroduce raw `readlink`; the seam confines
    it, so prefer `lsof` on macOS as above.
 

@@ -170,13 +170,13 @@ cmd_fleet() {
     send|chat)
       [ "$action" = chat ] && _need jq
       while :; do case "${1:-}" in --yes|--force) fl+=("$1"); shift ;; *) break ;; esac; done
-      msg="${1:-}"; [ -n "$msg" ] || _die "usage: overseer fleet $action [--yes|--force] <message>  (broadcasts to every agent pane)"
+      msg="${1:-}"; [ -n "$msg" ] || _die "usage: overseer fleet $action [--yes] [--force] <message>  (broadcasts to every agent pane)"
       for p in "${targets[@]}"; do
         printf '===== %s =====\n' "$p"
         if [ "$action" = send ]; then ( cmd_send ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true
         else ( cmd_chat ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true; fi
       done ;;
-    *) _die "usage: overseer fleet <status|read|wait [timeout]|send [--yes] <msg>|chat [--yes] <msg>>" ;;
+    *) _die "usage: overseer fleet [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]  (no subcommand = status)" ;;
   esac
 }
 # turn-based interaction with a PLAIN shell pane (not a claude TUI): run one command line, wait for
