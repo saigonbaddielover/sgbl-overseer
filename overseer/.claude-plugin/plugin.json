@@ -1,6 +1,6 @@
 {
   "name": "overseer",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "One agent that oversees others: drive and read other agent sessions (Claude Code, Codex) and shells running in tmux panes, turn-based, from outside. Linux + tmux.",
   "author": { "name": "saigonbaddielover" },
   "homepage": "https://github.com/saigonbaddielover/sgbl-overseer",

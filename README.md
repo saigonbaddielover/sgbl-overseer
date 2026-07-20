@@ -114,6 +114,10 @@ worse.
   `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
   may change between releases. If a release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
+- **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on numbered options, which is how
+  Claude and Codex render permission/approval and most select prompts. A *searchable* picker that drops the
+  numbers (e.g. a type-to-filter list) is not auto-detected as "awaiting"; `peek` the pane and drive it with
+  `keys`. `overseer doctor` self-checks that the detector matches a sample menu (catches a broken UTF-8 locale).
 
 ## Compatibility
 
