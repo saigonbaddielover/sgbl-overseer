@@ -38,6 +38,7 @@ main() {
     send) cmd_send "$@" ;;
     chat) cmd_chat "$@" ;;
     wait) cmd_wait "$@" ;;
+    fleet) cmd_fleet "$@" ;;
     sh)   cmd_sh "$@" ;;
     quit) cmd_quit "$@" ;;
     slash) cmd_slash "$@" ;;
@@ -52,6 +53,7 @@ main() {
       printf '  chat  [--yes|--force] <t> <msg|-> [timeout]  agent: send, wait for the reply, print it\n'
       printf '  send  [--yes|--force] <t> <msg|->  agent: paste + verify + submit, confirm the turn started (no reply wait)\n'
       printf '  wait  <t> [timeout]        agent: block until the turn finishes\n'
+      printf '  fleet <status|read|wait|send|chat> [args]  every agent pane at once (send/chat broadcast)\n'
       printf '  quit  <t>                  agent: exit the TUI (claude Ctrl-C x2, codex x1), reveal the shell, keep tmux\n'
       printf '  slash <t> </cmd>           agent: run a slash command (/model /status ...; claude /resume /clear ...)\n'
       printf '  menu  <t> <item> [nav-key] claude only: navigate a tab/menu until <item> is active (default key Right)\n'
