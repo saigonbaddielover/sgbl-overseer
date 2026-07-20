@@ -14,6 +14,9 @@ _uint() { case "${1:-}" in ''|*[!0-9]*) _die "timeout must be a whole number of 
 _nap() { sleep "$POLL_INTERVAL"; }
 case "$POLL_INTERVAL" in ''|*[!0-9.]*|*.*.*) _die "OVERSEER_POLL_INTERVAL must be a number of seconds, got: '$POLL_INTERVAL'" ;; esac
 _uint "$DEFAULT_TIMEOUT"
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 1 ]; }; then
+  _die "needs bash >= 4.1 (found ${BASH_VERSION:-unknown}); on macOS install a newer bash (e.g. Homebrew) and run overseer under it"
+fi
 
 _dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib/discovery.sh

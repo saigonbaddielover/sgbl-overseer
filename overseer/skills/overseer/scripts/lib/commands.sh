@@ -120,6 +120,7 @@ cmd_chat() {
     0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
        else printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"; fi ;;
     2) _report_awaiting "$pane" "$target" ;;
+    3) _die "the agent in $pane exited mid-turn (its pane dropped to a shell) — no reply was produced; peek: overseer peek $target" ;;
     *) _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target" ;;
   esac
 }
@@ -138,6 +139,7 @@ cmd_wait() {
     case "$rc" in
       0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
       2) _report_awaiting "$pane" "$target" ;;
+      3) _die "the agent in $pane exited mid-turn (its pane dropped to a shell); peek: overseer peek $target" ;;
       *) _die "timeout after ${timeout}s" ;;
     esac
   else

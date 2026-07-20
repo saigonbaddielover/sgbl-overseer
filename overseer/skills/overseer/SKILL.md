@@ -109,6 +109,10 @@ polls for a new `task_complete` (there is no hook), and the reply is that event'
 Do **not** use the on-screen spinner to judge done — a finished turn leaves a stale
 `Brewed/Churned for Ns` line on screen.
 
+If the agent **exits mid-turn** (it crashes, or you `quit` it), `chat`/`wait` notice the pane fell back
+to a shell and return an error at once instead of waiting out the timeout for a reply that will never
+arrive. A turn that is hung but still alive is still bounded by `[timeout]`.
+
 `sh` is different: it appends `; printf '\n<token>:<exit>\n'` to the command and waits for that
 unique sentinel line to appear (then reads the output between the command echo and the sentinel).
 This is prompt-agnostic — it does not depend on knowing the shell's `PS1`.
@@ -202,7 +206,8 @@ plugin ships three hooks, all routed through one script (`hooks/hooks.json` →
 **All three are wired automatically when the plugin is installed** — no `settings.json` editing. A
 user-scope install covers every session; there is no project-scope walk-up caveat.
 
-Each hook only writes an mtime marker (files are reused per session — no unbounded growth). They are
+Each hook only writes an mtime marker (files are reused per session, and markers idle for over a week
+are swept on the next turn — no unbounded growth). They are
 pure accelerators: the transcript stays the source of truth for the reply and the on-screen prompt stays
 the arbiter for awaiting, so a marker never causes a half-written read or a false prompt. A session the
 hooks do not cover — or a Codex pane, which has none — falls back to the same size/mtime-gated poll.

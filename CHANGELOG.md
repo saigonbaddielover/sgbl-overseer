@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-07-20
+
+### Added
+- **`chat`/`wait` fail fast when the agent exits mid-turn.** The wait loop watched only the transcript,
+  so if the driven Claude/Codex crashed (or was `quit`) mid-turn it would wait out the entire
+  `[timeout]` (default 600s) for a reply that would never come. It now also checks, a few times a
+  second's worth of ticks apart, whether the pane has dropped back to a shell (the harness process
+  gone); if so it returns immediately with "agent exited mid-turn — peek …". A hung-but-alive turn is
+  still bounded by the timeout, as before. Verified live (rc in ~3s on a shell pane vs. the full
+  timeout; a real turn on a live agent is unaffected).
+
+### Changed
+- **Idle turn-marker files are swept automatically.** The `Stop`/`UserPromptSubmit`/`Notification`
+  hooks write one mtime marker per session id; across many sessions over time those accumulated
+  forever. The hook now prunes markers untouched for over a week, gated to run at most once a day (via
+  a `.overseer-pruned` stamp), so a heavy user's `~/.claude/{turn-done,turn-started,awaiting}/` no
+  longer grows without bound. Deleting a stale marker only costs a poll-fallback on that session's next
+  turn (the hook recreates it), never a wrong read.
+
+### Fixed
+- **A too-old bash now fails loudly at startup.** The script relies on named file descriptors
+  (`exec {fd}>…`, bash ≥4.1) and associative arrays (bash ≥4.0); under stock macOS bash 3.2 those are
+  parse/runtime errors surfacing cryptically deep in a sourced lib. The entry now checks
+  `BASH_VERSINFO` up front and exits with a clear "needs bash >= 4.1" message before sourcing anything.
+
 ## [0.5.10] - 2026-07-20
 
 ### Changed

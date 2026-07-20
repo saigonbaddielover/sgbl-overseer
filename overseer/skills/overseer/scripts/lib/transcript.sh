@@ -79,7 +79,7 @@ _signal_since() {   # sid since_epoch
 # every ~2s so a session the hook does not cover still resolves. codex: no hook, so poll the rollout
 # every tick. args: kind, transcript_path, baseline_turn_count, timeout_s, [claude sid], [since_epoch].
 _wait_reply() {
-  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" bbytes="${8:-}" i=0 woke=0
+  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" bbytes="${8:-}" i=0 woke=0 cur
   local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$kind" = claude ] && [ "$woke" = 0 ] && [ -n "$sid" ] && _signal_since "$sid" "$since" && woke=1
@@ -92,6 +92,10 @@ _wait_reply() {
       else [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0; fi
     fi
     if [ -n "$pane" ] && { { [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ]; } || { [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since awaiting "$sid" "$since"; }; } && _awaiting "$pane" >/dev/null 2>&1; then return 2; fi
+    if [ -n "$pane" ] && [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then
+      cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3
+      _is_shell "$cur" && return 3
+    fi
     i=$((i + 1)); _nap
   done
   return 1
