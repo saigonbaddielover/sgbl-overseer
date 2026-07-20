@@ -32,6 +32,8 @@ server-side.
 - **tmux** — the target must run inside tmux (a plain PTY can't be driven; the kernel blocks keystroke
   injection and the screen buffer lives client-side).
 - **jq** — for transcript reading.
+- **bash ≥ 4.1** — the script uses named file descriptors and associative arrays; stock macOS bash 3.2
+  is too old (install a newer bash and run overseer under it).
 - **Claude Code** — this is a plugin for it.
 - **Codex** *(optional)* — to drive Codex panes as well; Claude-only setups need nothing extra.
 
@@ -94,6 +96,9 @@ Two environment variables tune the defaults (both validated at startup, so a bad
 - **Blocked on a prompt** is detected from the screen: if the agent stops at a permission / plan /
   select prompt (a cursor `❯`/`›`/`▶` on a numbered option), `chat`/`wait` return its question +
   options rather than hanging to timeout — you answer with `keys`/`menu` (pick) or `send` (free-text).
+- **Agent exits mid-turn** (a crash, or a `quit`): `chat`/`wait` notice the pane dropped back to a shell
+  and fail fast with a clear message, instead of waiting out the whole timeout for a reply that will
+  never come. (A hung-but-alive turn is still bounded by the timeout.)
 - **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
   pane has a descendant process named `codex` (so a 0-turn Codex is detected before it opens a rollout).
   Codex's transcript is the `~/.codex/sessions/**/rollout-*.jsonl` the process holds open, read straight
