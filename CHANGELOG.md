@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-07-20
+
+### Added
+- **`overseer doctor --live`** — an opt-in end-to-end self-test. Plain `doctor` stays static (no side
+  effects); with `--live` it spins up a *throwaway* tmux session, runs one `sh` round-trip through it
+  (send-keys → sentinel → capture-pane), reports ok/FAIL, and tears the session down. This exercises the
+  whole shell-driving path — tmux plumbing, the sentinel protocol, `_is_shell`, wake/env-neutralization
+  — against a real pane, catching a broken tmux or locale that the static checks can't. Verified live:
+  plain `doctor` spawns nothing; `--live` reports ok and leaves no session behind.
+
+### Docs
+- **Clarified why searchable pickers aren't auto-detected as "awaiting" — it is intentional, not a gap.**
+  Live investigation (Codex's `@`-mention list) confirmed these are input-box UI the user opens by typing
+  (`@`, a slash command), never a state a turn ends in, and their on-screen chrome (a leading `>`/`›`, an
+  "esc to cancel" footer) overlaps a normal reply's markdown — so auto-detecting them would risk
+  false-positives on real answers on the core `chat`/`wait` path. They stay driven by `peek` + `keys`, as
+  documented. (No detector change shipped, by design.)
+
 ## [0.5.12] - 2026-07-20
 
 ### Added
