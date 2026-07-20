@@ -39,6 +39,7 @@ _awaiting_text() {
 }
 _awaiting() {
   local pane="$1" cap
+  _wake_pane "$pane"
   cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
   _awaiting_text "$cap"
 }

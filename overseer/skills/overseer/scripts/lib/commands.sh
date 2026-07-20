@@ -309,7 +309,7 @@ _doctor_probe() {
 }
 _doctor_live() {
   command -v tmux >/dev/null 2>&1 || { printf '  [skip] live self-test: tmux not available\n'; return 0; }
-  local sess="overseer-doctor-$$" pane out
+  local sess="overseer-doctor-$$" pane out rc=0
   tmux new-session -d -s "$sess" -x 80 -y 24 2>/dev/null || { printf '  [skip] live self-test: could not open a throwaway tmux session\n'; return 0; }
   pane=$(tmux list-panes -t "$sess" -F '#{pane_id}' 2>/dev/null | head -1)
   if [ -n "$pane" ]; then
@@ -318,11 +318,13 @@ _doctor_live() {
       printf '  [ok]   live self-test: sh round-trip on a throwaway pane (send -> sentinel -> capture works end to end)\n'
     else
       printf '  [FAIL] live self-test: sh round-trip returned no marker — the tmux send-keys/capture-pane path may be broken\n'
+      rc=1
     fi
   else
     printf '  [skip] live self-test: no pane in the throwaway session\n'
   fi
   tmux kill-session -t "$sess" 2>/dev/null || true
+  return "$rc"
 }
 # preflight the runtime: the requirements (Linux/proc, tmux, jq) and — crucially — whether Claude
 # Code's on-disk session state is where discovery expects it. Run this first when a pane "can't be
@@ -363,6 +365,6 @@ cmd_doctor() {
   else
     printf '  [warn] awaiting-prompt detector failed on a sample menu — check the UTF-8 locale (grep may not match ❯/›); wait/chat could miss permission prompts\n'
   fi
-  [ "$live" = 1 ] && _doctor_live
+  [ "$live" = 1 ] && { _doctor_live || bad=1; }
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
 }

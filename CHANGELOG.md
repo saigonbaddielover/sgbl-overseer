@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.16] - 2026-07-20
+
+### Fixed
+- **`doctor --live` reported `doctor: OK` (exit 0) even when its own self-test printed `[FAIL]`.**
+  `_doctor_live` never fed its result back into the `bad` flag, so the one check that exercises the real
+  send-keys/capture-pane path could fail while `doctor` still declared the runtime healthy — a false
+  green, the worst outcome for a preflight. It now returns non-zero on `[FAIL]` and `doctor` exits 1.
+  `[skip]` outcomes (no tmux, no throwaway session) stay non-fatal, as before.
+- **`chat`/`wait` read a frozen screen when the pane was scrolled up.** A pane in tmux copy-mode serves
+  the *scrolled* view to `capture-pane`, so `_awaiting` could miss a permission/select prompt the agent
+  was actually blocked on and hang to timeout instead of returning the question. `_awaiting` now cancels
+  copy-mode first (`_wake_pane`), so the awaiting detector always reads the live screen. `fleet status`
+  goes through the same detector and therefore also reports live state rather than a frozen one. The
+  read-only `peek`/`read` paths are deliberately left alone — they never cancel a scroll you set up.
+
+Both bugs were found by a three-axis audit (command surface, documented behaviour vs code, release
+hygiene) rather than by use; the doc drift the same audit turned up is addressed separately.
+
 ## [0.5.15] - 2026-07-20
 
 ### Changed
