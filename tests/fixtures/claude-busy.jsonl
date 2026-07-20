@@ -1,0 +1,2 @@
+{"type":"user","sessionId":"busy-1","origin":{"kind":"human"},"message":{"content":"do something"}}
+{"type":"assistant","sessionId":"busy-1","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]}}

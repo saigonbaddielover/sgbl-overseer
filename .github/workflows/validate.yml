@@ -30,8 +30,13 @@ jobs:
         run: |
           for f in overseer/skills/overseer/scripts/overseer \
                    overseer/skills/overseer/scripts/lib/*.sh \
-                   overseer/hooks/turn-done.sh; do
+                   overseer/hooks/turn-done.sh \
+                   tests/run.sh; do
             bash -n "$f"
           done
           shellcheck -x -S warning overseer/skills/overseer/scripts/overseer
           shellcheck -S warning overseer/hooks/turn-done.sh
+          shellcheck -S warning tests/run.sh
+
+      - name: parser fixture tests
+        run: bash tests/run.sh

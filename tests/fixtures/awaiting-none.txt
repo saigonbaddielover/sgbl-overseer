@@ -1,0 +1,7 @@
+Here is the plan I propose:
+
+▶ 1. Refactor the parser into a pure function
+Then wire it into the command layer.
+
+The single line above has a glyph but no prompt cursor, and there is only one
+numbered item, so this is a normal reply — not a blocking prompt.
