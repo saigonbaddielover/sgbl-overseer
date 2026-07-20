@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-07-20
+
+### Fixed
+- **Error output was being swallowed by every box-mutating command since v0.5.9.** The per-pane lock
+  helpers opened their fd with `exec {fd}>"$f" 2>/dev/null` — but `exec` *with no command* applies both
+  redirections to the **current shell permanently**, so `2>/dev/null` silenced stderr for the rest of the
+  process. Any later `_die`/warning from `chat`/`send`/`sh`/`slash`/`menu`/`keys` printed nothing (a
+  command could fail with an empty message). Scoping the redirect to a group (`{ exec {fd}>"$f"; }
+  2>/dev/null`) keeps the fd open while restoring stderr. Caught by the new stress harness.
+- **Codex now refuses a message starting with `!` instead of running it as a shell command.** Codex
+  treats a submitted `!…` as a Shell-mode command (its design) — trimming or space-guarding doesn't stop
+  it — so `chat`/`send` on such a message could execute arbitrary shell in the watched session. `_deliver`
+  now refuses it with a clear message pointing at `sh <target> '<cmd>'` (or rewording).
+
+### Added
+- **`tests/stress.sh`** — a manual (non-CI, tmux-required) verification harness for the live paths the
+  fixture tests can't reach: 8-pane concurrent `sh` isolation, 5-way same-pane lock serialization,
+  large-rollout (~18 MB) reader perf, mid-turn crash liveness (`rc=3`, not timeout), and — with
+  `OVERSEER_STRESS_CODEX_PANE=%N` — the Codex `!`-refuse safety against a real pane. CI lint-checks it
+  (`bash -n` + shellcheck); it is run by hand. This capstone run is what surfaced the two fixes above.
+
 ## [0.5.13] - 2026-07-20
 
 ### Added

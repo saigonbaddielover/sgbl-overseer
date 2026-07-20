@@ -90,7 +90,11 @@ Two environment variables tune the defaults (both validated at startup, so a bad
 ## How it works
 
 - **Delivery** is one atomic **bracketed paste**, verified before submit — uniform for one line, many
-  lines, or a line wider than the pane, and a ghost autocomplete can never interleave.
+  lines, or a line wider than the pane, and a ghost autocomplete can never interleave. A Claude message
+  whose first char is `/ ! # @` gets one leading space (Claude trims it back off) so it stays literal;
+  for Codex a message starting with `!` is **refused** — Codex runs `!…` as a shell command by design,
+  so use `sh <target> '<cmd>'` (or reword) — and an `@`-mention token can pop its file picker (`peek` +
+  `keys` to recover).
 - **Turn completion** (`chat`/`wait`) comes from the transcript, never the on-screen spinner (a
   finished turn leaves a stale spinner line): for Claude, an assistant message whose `stop_reason`
   isn't `tool_use`; for Codex, a `task_complete` event in the rollout jsonl.

@@ -6,12 +6,12 @@ _lock_pane() {
   local pane="$1" d="${TMPDIR:-/tmp}/overseer-$UID" f
   mkdir -p "$d" 2>/dev/null || return 0
   f="$d/pane-${pane//[!0-9A-Za-z]/_}.lock"
-  exec {_OVERSEER_LOCK_FD}>"$f" 2>/dev/null || { _OVERSEER_LOCK_FD=''; return 0; }
+  { exec {_OVERSEER_LOCK_FD}>"$f"; } 2>/dev/null || { _OVERSEER_LOCK_FD=''; return 0; }
   flock -w 30 "$_OVERSEER_LOCK_FD" 2>/dev/null || return 0
 }
 _unlock_pane() {
   [ -n "$_OVERSEER_LOCK_FD" ] || return 0
-  exec {_OVERSEER_LOCK_FD}>&- 2>/dev/null || true
+  { exec {_OVERSEER_LOCK_FD}>&-; } 2>/dev/null || true
   _OVERSEER_LOCK_FD=''
 }
 # a pane in tmux copy-mode (user scrolled up) freezes capture on the scrolled view and routes keys
@@ -132,6 +132,8 @@ _deliver() {
   # its menu, so a codex message is left exactly as typed.
   if [ "$kind" = claude ]; then
     case "$msg" in /*|'!'*|'#'*|'@'*) msg=" $msg" ;; esac
+  else
+    case "$(_trim "$msg")" in '!'*) _die "Codex runs a message starting with '!' as a shell command (by its design), not chat — reword it (e.g. lead with a word), or run a command with: overseer sh <target> '<cmd>'" ;; esac
   fi
   _paste_verified "$pane" "$msg"
 }
