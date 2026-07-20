@@ -5,7 +5,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.5.5] - 2026-07-20
+## [0.5.6] - 2026-07-20
+
+### Changed
+- **Turn detection in the wait loops now reads only the bytes appended since the send**, not the whole
+  transcript. While waiting, overseer re-scanned the entire `.jsonl`/rollout on every change to recount
+  turns; it now records the file size at send time and `tail`s from that offset to spot the new terminal
+  marker (`stop_reason ≠ tool_use` for Claude, `task_complete` for Codex). Equivalent to the old
+  count-vs-baseline while the file only grows; the full-count reader is kept for `doctor`'s display and as
+  the fallback. Pairs with the size/mtime gate from 0.5.4, so a `wait` on a multi-megabyte session does
+  near-constant work per tick instead of re-parsing megabytes.
+- **`/proc` discovery walks every thread's `children`, not just the pane's main thread.** `_agent_pid` /
+  `_descendants` read `task/<pid>/children` only; they now read `task/*/children`, so an agent a harness
+  spawns from a non-main thread is still discovered. No effect on today's Claude/Codex (both spawn from
+  the main thread) — a robustness fix against future layouts.
 
 ### Added
 - **Event-driven turn-start and awaiting-input signals for Claude**, closing the last polling gap. Two
