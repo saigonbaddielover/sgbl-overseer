@@ -97,10 +97,15 @@ message to read a long, multi-line prompt from stdin.
 
 ### Event mode (bundled)
 
-The plugin ships a `Stop` hook (`hooks/turn-done.sh`) that touches `~/.claude/turn-done/<session_id>`
-so `chat`/`wait` wake the instant a turn ends instead of polling (~2s). It is wired **automatically**
-on install — no `settings.json` editing. The transcript stays the source of truth for the reply, so an
-answer is never read half-written; without the hook it simply falls back to polling.
+The plugin ships three hooks (one shared script, `hooks/turn-done.sh`) so overseer wakes on events
+instead of polling: `Stop` touches `~/.claude/turn-done/<session_id>` (turn ended → `chat`/`wait` wake
+in ~0.25s not ~2s), `UserPromptSubmit` touches `turn-started/<session_id>` (so a `send` confirms the
+turn started with no sub-second race), and `Notification` touches `awaiting/<session_id>` (so `chat`/`wait`
+surface a permission/menu prompt the moment it appears). They are wired **automatically** on install — no
+`settings.json` editing. Every signal is only an accelerator: the transcript stays the source of truth
+(an answer is never read half-written) and the on-screen prompt stays the arbiter for awaiting, so a
+session the hooks do not cover — or a Codex pane, which has none — just falls back to polling, never
+worse.
 
 ## Caveats
 
