@@ -186,19 +186,27 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
   message anyway (they resolve the transcript once the turn begins); a bare `read`/`wait` still needs a
   completed turn to read.
 
-## Event mode (turn-done hook — bundled, faster `chat`/`wait`)
+## Event mode (bundled hooks — faster `chat`/`wait`/`send`)
 
-By default `chat`/`wait` poll the transcript (correct, ~2s worst-case latency). To wake the instant a
-turn ends, the plugin ships a `Stop` hook (`hooks/hooks.json` → `${CLAUDE_PLUGIN_ROOT}/hooks/turn-done.sh`)
-that touches `~/.claude/turn-done/<session_id>`. **It is wired automatically when the plugin is
-installed** — no `settings.json` editing. A user-scope install covers every session; there is no
-project-scope walk-up caveat (that only bites a hook placed in a single project's `.claude/settings.json`
-by hand, which does not apply here).
+By default the readers poll the transcript (correct, ~2s worst-case latency). To wake on events, the
+plugin ships three hooks, all routed through one script (`hooks/hooks.json` →
+`${CLAUDE_PLUGIN_ROOT}/hooks/turn-done.sh <subdir>`):
 
-The waiter reads `~/.claude/turn-done/<session_id>`'s mtime as the last turn-end time (the file is
-reused per session — no unbounded growth), but the transcript is still the source of truth for the
-reply, so an answer is never read half-written. A session the hook does not cover just falls back to
-polling — nothing breaks.
+- `Stop` → `~/.claude/turn-done/<session_id>` — turn ended, so `chat`/`wait` wake in ~0.25s.
+- `UserPromptSubmit` → `~/.claude/turn-started/<session_id>` — a prompt was accepted, so `send` confirms
+  the turn started immediately instead of polling for the first transcript marker (which the harness does
+  not write until the first token — the old sub-second race).
+- `Notification` → `~/.claude/awaiting/<session_id>` — Claude raised a permission/menu prompt, so
+  `chat`/`wait` look at the screen the moment it appears.
+
+**All three are wired automatically when the plugin is installed** — no `settings.json` editing. A
+user-scope install covers every session; there is no project-scope walk-up caveat.
+
+Each hook only writes an mtime marker (files are reused per session — no unbounded growth). They are
+pure accelerators: the transcript stays the source of truth for the reply and the on-screen prompt stays
+the arbiter for awaiting, so a marker never causes a half-written read or a false prompt. A session the
+hooks do not cover — or a Codex pane, which has none — falls back to the same size/mtime-gated poll.
+Nothing breaks.
 
 ## Requirements
 

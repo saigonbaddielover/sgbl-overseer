@@ -55,13 +55,16 @@ _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
 _file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
+_marker_since() {
+  local f="$CLAUDE_HOME/$1/$2" m
+  [ -f "$f" ] || return 1
+  m=$(stat -c %Y "$f" 2>/dev/null) || return 1
+  [ "$m" -ge "$3" ]
+}
 # a turn-done signal for this session at or after `since`: the Stop hook touches
 # ~/.claude/turn-done/<session_id> at each turn end, so its mtime is the last turn-end time.
 _signal_since() {   # sid since_epoch
-  local f="$CLAUDE_HOME/turn-done/$1" m
-  [ -f "$f" ] || return 1
-  m=$(stat -c %Y "$f" 2>/dev/null) || return 1
-  [ "$m" -ge "$2" ]
+  _marker_since turn-done "$1" "$2"
 }
 # block until the turn started by our send has ended, i.e. the turn count passes the baseline.
 # claude: prefer the Stop-hook signal (event-driven, ~0.25s), fall back to polling the transcript
@@ -79,15 +82,16 @@ _wait_reply() {
       last="$sig"
       [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0
     fi
-    [ -n "$pane" ] && [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ] && _awaiting "$pane" >/dev/null 2>&1 && return 2
+    if [ -n "$pane" ] && { { [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ]; } || { [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since awaiting "$sid" "$since"; }; } && _awaiting "$pane" >/dev/null 2>&1; then return 2; fi
     i=$((i + 1)); _nap
   done
   return 1
 }
 _wait_started() {
-  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" ctx
+  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" sid="${7:-}" since="${8:-0}" ctx
   local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
+    [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since turn-started "$sid" "$since" && { printf '%s' "$path"; return 0; }
     if [ -z "$path" ] || [ ! -f "$path" ]; then
       ctx=$(_target_ctx "$target" 2>/dev/null) && IFS=$'\t' read -r _ _ path <<< "$ctx" || true
     fi

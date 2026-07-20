@@ -62,14 +62,16 @@ cmd_send() {
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   [ "$force" = 0 ] && [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
   local base; base=$(_h_turn_count "$kind" "$path" 2>/dev/null); base="${base:-0}"
+  local sid=''; [ "$kind" = claude ] && [ -n "$path" ] && [ -f "$path" ] && sid=$(_sid_from_jsonl "$path")
 
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }
   fi
+  local since; since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
-  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane") || rc=$?
+  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since") || rc=$?
   case "$rc" in
     2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
     1) printf 'sent to %s:\n%s\n(could not confirm the turn started within 10s — peek: overseer peek %s)\n' "$pane" "$msg" "$target" ;;

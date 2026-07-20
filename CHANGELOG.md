@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-07-20
+
+### Added
+- **Event-driven turn-start and awaiting-input signals for Claude**, closing the last polling gap. Two
+  more Stop-hook-style markers now ride the same bundled hook script: `UserPromptSubmit` touches
+  `turn-started/<sid>` and `Notification` touches `awaiting/<sid>`. `send` records the submit time and
+  confirms the turn started the instant the marker lands — removing the sub-second race where the
+  transcript has no turn-start entry until the first token — and `chat`/`wait` surface an interactive
+  prompt as soon as the notification fires. Both are pure accelerators: when the target session does not
+  carry the hook (or on Codex, which has none), the readers fall back to the same size/mtime-gated
+  transcript poll, so behavior is unchanged, never worse. The reader uses one `_marker_since` helper for
+  all three markers, and the hook honors `${CLAUDE_HOME:-$HOME/.claude}`.
+
 ## [0.5.4] - 2026-07-20
 
 ### Fixed
