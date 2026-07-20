@@ -59,7 +59,7 @@ main() {
       printf '  menu  <t> <item> [nav-key] claude only: navigate a tab/menu until <item> is active (default key Right)\n'
       printf '  sh    <t> <command> [timeout]        shell pane: run one line, wait, print output+exit\n'
       printf '  keys  <t> <key>...         raw keys to answer prompts/menus (Enter Escape y Up C-c ...)\n'
-      printf '  doctor                     preflight: Linux/proc, tmux, jq, and claude/codex session state\n'
+      printf '  doctor [--live]            preflight: Linux/proc, tmux, jq, session state; --live also drives a throwaway pane\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;
     *) _die "unknown command: $cmd" ;;

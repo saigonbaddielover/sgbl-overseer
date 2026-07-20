@@ -78,7 +78,7 @@ All work goes through one script; the agent calls it as
 | `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
-| `doctor` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. |
+| `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` also drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
@@ -130,8 +130,13 @@ simply polls (~2s slower), never blocked.
 - The target program must run **inside tmux**.
 - **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on numbered options, which is how
   Claude and Codex render permission/approval and most select prompts. A *searchable* picker that drops the
-  numbers (e.g. a type-to-filter list) is not auto-detected as "awaiting"; `peek` the pane and drive it with
-  `keys`. `overseer doctor` self-checks that the detector matches a sample menu (catches a broken UTF-8 locale).
+  numbers (e.g. a type-to-filter list, or Codex's `@`-mention list) is **intentionally** not auto-detected:
+  those are input-box UI you open by typing (`@`, a slash command), not a state a turn ends in, and their
+  chrome (a leading `>`/`›`, an "esc to cancel" footer) overlaps a normal reply's markdown, so auto-detecting
+  them would risk false-positives on real answers. `peek` the pane and drive it with `keys`.
+- **`overseer doctor` self-checks** the awaiting detector against a sample menu (catches a broken UTF-8
+  locale); **`overseer doctor --live`** additionally spins up a throwaway pane and runs a `sh` round-trip
+  through it, verifying the send-keys/capture-pane path end to end.
 
 ## Compatibility
 

@@ -307,11 +307,29 @@ _doctor_probe() {
     2) printf '  [ok]   no %s session with a completed turn yet — nothing to probe\n' "$kind" ;;
   esac
 }
+_doctor_live() {
+  command -v tmux >/dev/null 2>&1 || { printf '  [skip] live self-test: tmux not available\n'; return 0; }
+  local sess="overseer-doctor-$$" pane out
+  tmux new-session -d -s "$sess" -x 80 -y 24 2>/dev/null || { printf '  [skip] live self-test: could not open a throwaway tmux session\n'; return 0; }
+  pane=$(tmux list-panes -t "$sess" -F '#{pane_id}' 2>/dev/null | head -1)
+  if [ -n "$pane" ]; then
+    out=$( ( cmd_sh "$pane" 'echo overseer-live-uptest' 15 ) 2>/dev/null ) || true
+    if printf '%s' "$out" | grep -q overseer-live-uptest; then
+      printf '  [ok]   live self-test: sh round-trip on a throwaway pane (send -> sentinel -> capture works end to end)\n'
+    else
+      printf '  [FAIL] live self-test: sh round-trip returned no marker — the tmux send-keys/capture-pane path may be broken\n'
+    fi
+  else
+    printf '  [skip] live self-test: no pane in the throwaway session\n'
+  fi
+  tmux kill-session -t "$sess" 2>/dev/null || true
+}
 # preflight the runtime: the requirements (Linux/proc, tmux, jq) and — crucially — whether Claude
 # Code's on-disk session state is where discovery expects it. Run this first when a pane "can't be
 # found": a missing sessions dir usually means no claude is running OR Claude Code changed its layout.
 cmd_doctor() {
-  local bad=0 n cver cxv
+  local bad=0 n cver cxv live=0
+  case "${1:-}" in --live|live) live=1 ;; esac
   printf 'overseer doctor (CLAUDE_HOME=%s)\n' "$CLAUDE_HOME"
   if [ "$OVERSEER_OS" = Linux ]; then printf '  [ok]   Linux\n'; else printf '  [FAIL] not Linux (%s) — /proc discovery is unimplemented here; the macOS ps/lsof backend is specified in docs/PORTING.md but not built\n' "$OVERSEER_OS"; bad=1; fi
   [ -d /proc ] && printf '  [ok]   /proc present\n' || { printf '  [FAIL] /proc missing\n'; bad=1; }
@@ -345,5 +363,6 @@ cmd_doctor() {
   else
     printf '  [warn] awaiting-prompt detector failed on a sample menu — check the UTF-8 locale (grep may not match ❯/›); wait/chat could miss permission prompts\n'
   fi
+  [ "$live" = 1 ] && _doctor_live
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
 }
