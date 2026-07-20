@@ -11,10 +11,11 @@ drive another agent session — or run commands turn-based in a plain shell — 
 is watching in a tmux pane. It works the same whether the pane is on this box or displayed on
 the user's machine over VSCode Remote-SSH, because tmux is server-side here.
 
-**Harnesses.** `list`, `read`, `chat`, `send`, `wait`, `quit`, `slash`, `menu` **auto-detect** whether a
-pane runs Claude Code or Codex and adapt (right transcript, right exit keys, right highlight), so you use
-the same commands for both. `peek`, `keys`,
-`sh`, `list --all` are harness-agnostic. Codex specifics you may need: **quitting** takes a single
+**Harnesses.** `list`, `read`, `chat`, `send`, `wait`, `quit`, `slash`, `fleet` **auto-detect** whether a
+pane runs Claude Code or Codex and adapt (right transcript, right completion signal, right exit keys), so
+you use the same commands for both. `peek`, `keys`, `menu`,
+`sh`, `list --all` are harness-agnostic — in particular `menu` drives *any* pane by looking at what is
+highlighted on screen, which is why you pass it `Down` for a vertical Codex popup. Codex specifics you may need: **quitting** takes a single
 Ctrl-C (the script handles it); to **interrupt a running Codex turn** use `keys <t> Escape` — NOT
 Ctrl-C, which would quit Codex when it is idle; a Codex **approval prompt** is answered with a letter
 key via `keys` (`y` approve once, `a` approve for session, `d` deny). Support for more harnesses is
@@ -35,16 +36,17 @@ from stdin.
 |---|---|---|
 | `list [--all]` | List tmux panes running an agent + its **HARNESS** (claude or codex): session, pane, pids, cwd. `--all` lists **every** tmux pane and its foreground command — use it to find shell panes to target. | read-only |
 | `read <target>` | Print the last user prompt + last assistant reply from an agent's transcript (Claude `~/.claude/projects/.../<sid>.jsonl`, or Codex `~/.codex/sessions/.../rollout-*.jsonl`), auto-detected via the pane pid. | read-only |
-| `peek [raw] <target> [lines]` | Dump the pane's current screen. Default: the **whole** visible screen (a feature panel like `/status` fills it). `raw` keeps ANSI colors so the **active tab / selected row** — a reverse-video or background highlight, invisible in plain text — is readable. A trailing number caps plain output to the last N lines. Any pane. | read-only |
-| `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. If the agent stops at an interactive prompt (permission / plan / select menu) it returns that question + how to answer instead of hanging. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
-| `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, then confirm the turn actually started before returning (so a following `wait`/`read` doesn't race) — but do **not** wait for the reply (use `chat` for that). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
+| `peek [raw\|-e] <target> [lines]` | Dump the pane's current screen. Plain mode drops blank lines and a trailing number caps it to the last N lines. `raw` (also `-e`/`--raw`) keeps ANSI colors so the **active tab / selected row** — a highlight invisible in plain text — is readable; `raw` always prints the whole screen and ignores `[lines]`. Any pane. | read-only |
+| `chat [--yes] [--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. If the agent stops at an interactive prompt (permission / plan / select menu) it returns that question + how to answer instead of hanging. `--force` skips the mid-turn guard; the two flags are independent and may be combined. | **SIDE EFFECT** |
+| `send [--yes] [--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, then confirm the turn actually started before returning (so a following `wait`/`read` doesn't race) — but do **not** wait for the reply (use `chat` for that). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
-| `fleet <status\|read\|wait\|send\|chat> [args]` | **Every agent pane at once** (a fan-out over the per-pane commands; each pane is handled in isolation so one failure never aborts the batch). `status` prints one line per pane (harness + idle/busy/awaiting); `read` and `wait [timeout]` fan those out; `send`/`chat [--yes] <msg>` **broadcast** the same message to all agent panes, each still subject to its own confirm/mid-turn guard. Use `status` to survey many sessions; broadcast only when the user explicitly asks to message every agent. | status/read/wait read-only · send/chat **SIDE EFFECT** |
+| `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (a fan-out over the per-pane commands; each pane is handled in isolation so one failure never aborts the batch). With no subcommand it defaults to `status`, which prints one line per pane — harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for an agent that hasn't taken a turn yet and `(not an agent)` for a pane that stopped being one. `read` and `wait [timeout]` fan those out; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes, each still subject to its own confirm/mid-turn guard. Use `status` to survey many sessions; broadcast only when the user explicitly asks to message every agent. | status/read/wait read-only · send/chat **SIDE EFFECT** |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
-| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
-| `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
-| `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses if the pane is not an idle shell. | **SIDE EFFECT** |
+| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. The leading `/` is optional (`slash <t> resume` works). A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
+| `menu <target> <item> [nav-key]` | **Any pane** (no harness gate — it works off what is highlighted on screen). Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
+| `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses if the pane is not an idle shell. If the output outran the pane's scrollback, it reports the exit code and says the output can't be captured whole — re-run with `> out.txt 2>&1` and read the file. | **SIDE EFFECT** |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `y`, `Up`, `C-c`, ...) to answer a prompt/menu or interrupt. Any pane. | **SIDE EFFECT** |
+| `doctor [--live]` | Preflight the runtime: Linux + `/proc`, `tmux`, `jq`, `claude`/`codex` versions, that on-disk session state is where discovery expects it, and a contract probe that runs the real transcript readers against the newest session. `--live` (also plain `live`) additionally drives a **throwaway** pane through an `sh` round-trip. Exits non-zero if any check fails. Run it first when a pane "can't be found" or a command behaves oddly. | read-only (`--live` spawns and kills its own tmux session) |
 
 `chat`/`send`/`wait`/`read` are for an agent TUI — Claude Code or Codex — and read its transcript to
 know a turn ended (auto-detected per pane). `sh` is for a plain shell (it appends a unique sentinel
@@ -90,6 +92,10 @@ EOF
   option (add `keys <t> Enter` if it needs confirming; `menu <t> <label>` navigates to it by name);
   `send <t> "<text>"` types free-text; then `wait <t>` / `read <t>`. Each answer may reveal the next
   prompt (e.g. a plan approval → then a per-edit permission) — `wait` will surface each one.
+- `chat`/`wait` **ran to timeout although the agent was clearly waiting** → the detector only fires on a
+  cursor (`❯`/`›`) sitting on **two or more numbered** options. A single-option prompt, a bare y/n with
+  no numbering, or a searchable/type-to-filter picker is deliberately not matched (matching them would
+  false-positive on ordinary prose). `peek <t>` to see what it is asking and answer with `keys`.
 
 ## Scope: tmux panes only
 
@@ -113,13 +119,17 @@ polls for a new `task_complete` (there is no hook), and the reply is that event'
 Do **not** use the on-screen spinner to judge done — a finished turn leaves a stale
 `Brewed/Churned for Ns` line on screen.
 
-If the agent **exits mid-turn** (it crashes, or you `quit` it), `chat`/`wait` notice the pane fell back
-to a shell and return an error at once instead of waiting out the timeout for a reply that will never
-arrive. A turn that is hung but still alive is still bounded by `[timeout]`.
+If the agent **exits mid-turn** (it crashes, you `quit` it, or the pane is killed outright), `chat`/`wait`
+notice the pane is no longer running an agent and return an error at once instead of waiting out the
+timeout for a reply that will never arrive. A turn that is hung but still alive is still bounded by
+`[timeout]`.
 
-`sh` is different: it appends `; printf '\n<token>:<exit>\n'` to the command and waits for that
-unique sentinel line to appear (then reads the output between the command echo and the sentinel).
-This is prompt-agnostic — it does not depend on knowing the shell's `PS1`.
+`sh` is different: it **brackets** the command with two unique sentinels — one printed before it runs and
+`<token>:<exit>` after — waits for the closing one, then reads strictly between them. The opening
+sentinel is what keeps the shell's own echo of the command line out of the output. This is
+prompt-agnostic — it does not depend on knowing the shell's `PS1`. If the output was long enough that
+the opening sentinel scrolled out of the pane's history, `sh` prints the exit code and says the output
+cannot be captured whole; re-run with `> out.txt 2>&1` and read the file instead.
 
 ## Navigating a Claude feature screen (`/status`, `/resume`, `/model`, ...)
 
@@ -128,8 +138,9 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
 
 1. Open it with `slash <t> /status`, then `peek <t>` — default `peek` shows the **full** screen, so a
    tall panel is not truncated.
-2. To see **which tab or row is active**, use `peek raw <t>`. The active item is a reverse-video
-   (`ESC[7m`) or background-color (`ESC[48;5;Nm`) highlight — **plain `peek` cannot show it**, so
+2. To see **which tab or row is active**, use `peek raw <t>`. The active item carries a reverse-video
+   (`ESC[7m`), background-color (`ESC[48;5;Nm`) or cyan-foreground (`ESC[38;5;6m`) highlight, or is
+   marked by a bare cursor glyph (`❯ ▶ ► ● ➤ ›`) — **plain `peek` cannot show the colour ones**, so
    navigating by plain text alone is flying blind.
 3. **To reach a named tab/row, use `menu <t> <item>`** — it does the reliable thing for you: press
    one key, re-read the highlight, repeat until `<item>` is active (default key `Right`; pass `Down`
@@ -177,17 +188,25 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
 ## Gotchas the script already handles (do not re-derive)
 
 - **Never trust the spinner** to tell busy from idle. A finished turn leaves a stale
-  `Brewed for Ns · N shells still running` line on screen. The reliable idle signal is a
-  **dim ghost suggestion** in the input box — Claude Code only shows it while awaiting input.
+  `Brewed for Ns · N shells still running` line on screen. Busy vs. idle is decided from the
+  **transcript**, never from the screen — see "How completion is detected" above.
 - **Ghost suggestion vs. real typed text**: the ghost is rendered dim (`ESC[2m`). `capture-pane -e`
-  keeps the color; the script uses it to tell an empty box (only ghost) from real content, so a
-  suggestion can never be mistaken for, or mixed into, your message.
+  keeps the color; the script uses it to tell an **empty input box** (only ghost) from one holding real
+  text, so a suggestion can never be mistaken for, or mixed into, your message. This is about the box,
+  not about busy/idle.
 - **A non-breaking space (U+00A0) sits between `❯` and the text** — normalized before comparing.
 - **The TUI renders with lag**: wait for a *specific condition* (the text appearing), never for
   "the screen stopped changing" — two identical captures usually mean "still stale", not "done".
 - **The user scrolling the pane up** (tmux copy-mode) would otherwise freeze capture on the scrolled
-  view and swallow keys — the script cancels copy-mode before any read/write, so driving works even
-  while they scroll to read.
+  view and swallow keys — so the script cancels copy-mode before anything that **types** into the pane
+  (`send`/`chat`/`sh`/`menu`) and before the **awaiting-prompt check** in `chat`/`wait`, and driving works
+  even while they scroll to read. The read-only `peek`/`read` deliberately do **not** cancel it: they
+  won't yank the view out from under someone reading history, so a `peek` of a scrolled pane shows the
+  scrolled view — scroll back down (or `keys <t> q`) if you need the live screen.
+- **Two overseer runs against the same pane** can't interleave keystrokes: every command that types
+  (`send`/`chat`/`sh`/`quit`/`slash`/`menu`) takes a per-pane `flock` first and releases it before the
+  reply wait, so a long `chat` never blocks a `read` of the same pane. Without `flock` — or if the lock
+  is still contended after 30s — it proceeds unlocked rather than failing.
 - **Control bytes in a message** (a raw ESC, or an embedded `\e[201~` paste-end marker) are stripped
   before the bracketed paste, so pasted content can't terminate the paste early and inject keystrokes.
 - **The input line is read at the cursor row** (`#{cursor_y}`), not "the last prompt glyph on screen",
@@ -214,7 +233,7 @@ plugin ships three hooks, all routed through one script (`hooks/hooks.json` →
 user-scope install covers every session; there is no project-scope walk-up caveat.
 
 Each hook only writes an mtime marker (files are reused per session, and markers idle for over a week
-are swept on the next turn — no unbounded growth). They are
+are swept by a prune that runs at most once every 24h — no unbounded growth). They are
 pure accelerators: the transcript stays the source of truth for the reply and the on-screen prompt stays
 the arbiter for awaiting, so a marker never causes a half-written read or a false prompt. A session the
 hooks do not cover — or a Codex pane, which has none — falls back to the same size/mtime-gated poll.
@@ -228,9 +247,14 @@ installed just polls — the same safe fallback, ~2s slower, never blocked.
 ## Requirements
 
 - Linux (uses `/proc` to map pane pid → agent: Claude via `~/.claude/sessions/<pid>.json`, Codex via
-  the rollout jsonl the codex process holds open) and `tmux`; `jq` for `read`/`chat`.
+  the rollout jsonl the codex process holds open), `tmux`, and **bash ≥ 4.1** (checked at startup).
+  `jq` is needed by every transcript reader — `read`, `chat`, `wait`, and `fleet status|read|wait`.
 - Run from **outside** the target session's tmux client (this is normal — you drive it from a
   separate shell).
+- Optional environment overrides, all validated at startup: `OVERSEER_TIMEOUT` (default `600`, the
+  fallback `[timeout]` for `chat`/`wait`/`sh`), `OVERSEER_POLL_INTERVAL` (default `0.25`, the poll
+  cadence), and `CLAUDE_HOME` / `CODEX_HOME` (defaults `~/.claude`, `~/.codex`) to point at non-default
+  state directories.
 
 ## Install
 

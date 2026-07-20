@@ -5,6 +5,42 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.17] - 2026-07-20
+
+### Docs
+- **Every documented behaviour now matches the code.** A three-axis audit (command surface · documented
+  behaviour vs code · release hygiene) found ~20 statements that had drifted as the plugin gained
+  commands; all are corrected across the built-in help, `README.md`, `SKILL.md` and `docs/`. The ones
+  that actively misled:
+  - **`menu` was described three different ways** — the built-in help said "claude only", the docs said
+    "Agent (Claude/Codex)", and the code gates on neither: it drives *any* pane off what is highlighted
+    on screen. Now stated as "any pane" everywhere, with the `Right`-vs-`Down` nav-key guidance kept.
+  - **`doctor` was missing from `SKILL.md` entirely**, so the agent-facing surface listed 12 of 13
+    commands.
+  - **`--yes` and `--force` were written `[--yes|--force]`** as if mutually exclusive; they are
+    independent and combinable, which the code's own usage strings already said. Both `fleet` usage
+    strings also disagreed with each other about `--force`.
+  - **The awaiting detector needs *two or more* numbered options** — a single-option or unnumbered y/n
+    prompt is not matched and `chat`/`wait` run to timeout. Previously only the searchable-picker
+    exclusion was documented.
+  - **`sh` brackets the command with two sentinels, not one**, and reports (rather than silently drops)
+    output whose opening sentinel outran the pane scrollback.
+  - **Busy/idle comes from the transcript, not the "dim ghost suggestion"** — the ghost only
+    distinguishes an empty input box from a full one. The old wording contradicted this file's own
+    completion-detection section.
+  - **Copy-mode is cancelled before *writes* and before the awaiting check**, not before "any
+    read/write": `peek`/`read` deliberately leave a scrolled pane alone.
+  - **Marker pruning runs at most once every 24h**, not "on the next turn".
+- Also newly documented: per-pane `flock` serialization (including that it proceeds unlocked when
+  contended past 30s), `CODEX_HOME`, the `bash >= 4.1` requirement and the real `jq` scope in
+  `SKILL.md`, the `list`/`fleet` foreground-command pre-filter, `fleet`'s `idle(0-turn)` /
+  `(not an agent)` states and its bare-`fleet` default, and the `doctor live` / `peek -e|--raw` /
+  bare-name `slash` aliases. `docs/PORTING.md` no longer presents the bash-version question as open (it
+  is decided and enforced), and `docs/DECISIONS.md` drops a line count that had already rotted.
+- **CHANGELOG: 0.5.5, 0.5.6 and 0.5.7 got their own headings.** Their notes had been folded under
+  `[0.5.8]`, leaving one version block with `### Changed` three times and no record of what each
+  release actually contained.
+
 ## [0.5.16] - 2026-07-20
 
 ### Fixed
@@ -186,6 +222,8 @@ hygiene) rather than by use; the doc drift the same audit turned up is addressed
 - README caveat: awaiting-input detection covers numbered menus (`❯`/`›` + numbered options), not
   type-to-filter searchable pickers — `peek` + `keys` those.
 
+## [0.5.7] - 2026-07-20
+
 ### Added
 - **Parser regression tests** (`tests/run.sh` + `tests/fixtures/`), run in CI. They assert the pure
   transcript/screen parsers against hand-built fixtures — turn counting, busy detection, last
@@ -202,6 +240,8 @@ hygiene) rather than by use; the doc drift the same audit turned up is addressed
   `capture-pane` wrapper, so the awaiting-prompt logic is unit-testable. No behavior change; confirms the
   existing regex already covers Codex's `›`-cursor numbered menus.
 
+## [0.5.6] - 2026-07-20
+
 ### Changed
 - **Turn detection in the wait loops now reads only the bytes appended since the send**, not the whole
   transcript. While waiting, overseer re-scanned the entire `.jsonl`/rollout on every change to recount
@@ -214,6 +254,8 @@ hygiene) rather than by use; the doc drift the same audit turned up is addressed
   `_descendants` read `task/<pid>/children` only; they now read `task/*/children`, so an agent a harness
   spawns from a non-main thread is still discovered. No effect on today's Claude/Codex (both spawn from
   the main thread) — a robustness fix against future layouts.
+
+## [0.5.5] - 2026-07-20
 
 ### Added
 - **Event-driven turn-start and awaiting-input signals for Claude**, closing the last polling gap. Two

@@ -68,24 +68,26 @@ All work goes through one script; the agent calls it as
 |---|---|
 | `list [--all]` | List agent panes + their **HARNESS** (claude/codex). `--all`: every pane + its foreground command. |
 | `read <target>` | Print the last user prompt + last assistant reply from the agent's transcript (Claude or Codex, auto-detected). |
-| `peek [raw] <target> [lines]` | Dump the pane's current screen. `raw` keeps ANSI colors (see the active tab/selection). |
-| `chat [--yes\|--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. If the agent stops at a prompt, returns its question + how to answer instead. |
-| `send [--yes\|--force] <target> <msg\|->` | **Agent (Claude/Codex).** Place + submit, confirm the turn started (so a following `wait` doesn't race), don't wait for the reply. |
+| `peek [raw\|-e] <target> [lines]` | Dump the pane's current screen. `raw` (also `-e`/`--raw`) keeps ANSI colors (see the active tab/selection) and prints the whole screen; plain mode drops blank lines and honours `[lines]`. |
+| `chat [--yes] [--force] <target> <msg\|-> [timeout]` | **Agent (Claude/Codex).** Send, wait for the turn to finish, print the reply. If the agent stops at a prompt, returns its question + how to answer instead. |
+| `send [--yes] [--force] <target> <msg\|->` | **Agent (Claude/Codex).** Place + submit, confirm the turn started (so a following `wait` doesn't race), don't wait for the reply. |
 | `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes — or return early if the agent stops at a prompt awaiting input. |
-| `fleet <status\|read\|wait\|send\|chat> [args]` | **Every agent pane at once.** `status` = one line each (harness + idle/busy/awaiting); `read`; `wait [timeout]`; `send`/`chat` **broadcast** the same message to all agent panes. A thin fan-out over the per-pane commands — each pane keeps its own guards, and one failing pane never aborts the batch. |
+| `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (no subcommand = `status`). `status` = one line each (harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for a started-but-unused agent and `(not an agent)` for a pane that stopped being one); `read`; `wait [timeout]`; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes. A thin fan-out over the per-pane commands — each pane keeps its own guards, and one failing pane never aborts the batch. |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
-| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. |
-| `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Codex popups are vertical — pass `Down`. |
+| `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. The leading `/` is optional — `slash <target> resume` works too. |
+| `menu <target> <item> [nav-key]` | **Any pane.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Default nav key `Right` suits a Claude tab bar; Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
-| `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` also drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end. |
+| `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
 
 Two environment variables tune the defaults (both validated at startup, so a bad value fails loudly):
 `OVERSEER_TIMEOUT` (default `600`) is the fallback `[timeout]` seconds for `chat`/`wait`/`sh`, and
-`OVERSEER_POLL_INTERVAL` (default `0.25`) is the poll cadence in seconds.
+`OVERSEER_POLL_INTERVAL` (default `0.25`) is the poll cadence in seconds. Two more point overseer at
+non-default state directories: `CLAUDE_HOME` (default `~/.claude`) and `CODEX_HOME` (default `~/.codex`),
+used to find session files, transcripts and the hook markers.
 
 ## How it works
 
@@ -99,17 +101,29 @@ Two environment variables tune the defaults (both validated at startup, so a bad
   finished turn leaves a stale spinner line): for Claude, an assistant message whose `stop_reason`
   isn't `tool_use`; for Codex, a `task_complete` event in the rollout jsonl.
 - **Blocked on a prompt** is detected from the screen: if the agent stops at a permission / plan /
-  select prompt (a cursor `❯`/`›`/`▶` on a numbered option), `chat`/`wait` return its question +
-  options rather than hanging to timeout — you answer with `keys`/`menu` (pick) or `send` (free-text).
-- **Agent exits mid-turn** (a crash, or a `quit`): `chat`/`wait` notice the pane dropped back to a shell
-  and fail fast with a clear message, instead of waiting out the whole timeout for a reply that will
-  never come. (A hung-but-alive turn is still bounded by the timeout.)
+  select prompt (a cursor `❯`/`›` on a line of **two or more** numbered options), `chat`/`wait` return
+  its question + options rather than hanging to timeout — you answer with `keys`/`menu` (pick) or `send`
+  (free-text). The detector first cancels tmux copy-mode, so a pane you scrolled up still reports its
+  live state. A single-option or unnumbered y/n prompt is **not** matched — see the limits below.
+- **Agent exits mid-turn** (a crash, a `quit`, or the pane being killed): `chat`/`wait` notice the pane
+  is no longer running an agent and fail fast with a clear message, instead of waiting out the whole
+  timeout for a reply that will never come. (A hung-but-alive turn is still bounded by the timeout.)
+- **Concurrent invocations are serialized per pane.** Every command that types into a pane
+  (`send`/`chat`/`sh`/`quit`/`slash`/`menu`) takes a `flock` on that pane first, so two overseer runs
+  can't interleave keystrokes into the same box; the lock is released before the reply wait, so a long
+  `chat` doesn't block a `read`. Where `flock` is missing — or the lock is still contended after 30s —
+  it proceeds unlocked rather than failing.
 - **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
   pane has a descendant process named `codex` (so a 0-turn Codex is detected before it opens a rollout).
   Codex's transcript is the `~/.codex/sessions/**/rollout-*.jsonl` the process holds open, read straight
-  off `/proc/<pid>/fd`.
-- **`sh` completion** is a unique sentinel line appended after the command — prompt-agnostic, no `PS1`
-  assumption. Pagers are neutralized and stdin is `/dev/null`, so `git log`/`man`/`cat` won't hang.
+  off `/proc/<pid>/fd`. Note `list` and `fleet` additionally pre-filter panes on their foreground command
+  (`claude`/`node`) for speed, so an agent launched under some other wrapper can be missing from those
+  listings while still being fully drivable by its `%N`.
+- **`sh` completion** is a pair of unique sentinel lines bracketing the command — prompt-agnostic, no
+  `PS1` assumption, and the leading sentinel keeps the shell's own echo of the command out of the
+  output. Pagers are neutralized and stdin is `/dev/null`, so `git log`/`man`/`cat` won't hang. If the
+  output was long enough that the *opening* sentinel scrolled out of the pane's history, `sh` says so
+  and prints the exit code without the (unreconstructable) output — re-run redirecting to a file.
 
 ### Event mode (bundled)
 
@@ -132,12 +146,15 @@ simply polls (~2s slower), never blocked.
   `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
   may change between releases. If a release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
-- **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on numbered options, which is how
-  Claude and Codex render permission/approval and most select prompts. A *searchable* picker that drops the
-  numbers (e.g. a type-to-filter list, or Codex's `@`-mention list) is **intentionally** not auto-detected:
-  those are input-box UI you open by typing (`@`, a slash command), not a state a turn ends in, and their
-  chrome (a leading `>`/`›`, an "esc to cancel" footer) overlaps a normal reply's markdown, so auto-detecting
-  them would risk false-positives on real answers. `peek` the pane and drive it with `keys`.
+- **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on **two or more** numbered
+  options, which is how Claude and Codex render permission/approval and most select prompts. Two shapes are
+  therefore not auto-detected. A prompt with a *single* numbered option, or a bare y/n prompt with no
+  numbering at all, falls below the two-option floor that keeps the detector off ordinary prose. And a
+  *searchable* picker that drops the numbers (e.g. a type-to-filter list, or Codex's `@`-mention list) is
+  **intentionally** excluded: those are input-box UI you open by typing (`@`, a slash command), not a state a
+  turn ends in, and their chrome (a leading `>`/`›`, an "esc to cancel" footer) overlaps a normal reply's
+  markdown, so auto-detecting them would risk false-positives on real answers. In both cases `chat`/`wait`
+  run to timeout instead of returning early — `peek` the pane and drive it with `keys`.
 - **`overseer doctor` self-checks** the awaiting detector against a sample menu (catches a broken UTF-8
   locale); **`overseer doctor --live`** additionally spins up a throwaway pane and runs a `sh` round-trip
   through it, verifying the send-keys/capture-pane path end to end.

@@ -6,7 +6,7 @@
 
 ### Context
 
-overseer is one bash program (`scripts/overseer` + four sourced `lib/*.sh`, ~600 lines total) that
+overseer is one bash program (`scripts/overseer` + four sourced `lib/*.sh`) that
 drives and reads another live agent in a tmux pane. During the optimization audit the question was
 raised directly: is bash the right implementation, or should this be rewritten in Rust / Go / Python?
 
