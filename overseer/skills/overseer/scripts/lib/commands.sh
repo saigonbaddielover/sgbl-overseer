@@ -146,6 +146,39 @@ cmd_wait() {
     echo "idle"
   fi
 }
+_fleet_status() {
+  local pane="$1" ctx kind path state
+  ctx=$(_target_ctx "$pane") || { printf '%s\t?\t(not an agent)\n' "$pane"; return 0; }
+  IFS=$'\t' read -r pane kind path <<< "$ctx"
+  if _awaiting "$pane" >/dev/null 2>&1; then state=awaiting
+  elif [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path"; then state=busy
+  elif [ -n "$path" ] && [ -f "$path" ]; then state=idle
+  else state='idle(0-turn)'; fi
+  printf '%s\t%s\t%s\n' "$pane" "$kind" "$state"
+}
+cmd_fleet() {
+  _need tmux
+  local action="${1:-status}"; shift || true
+  local -a targets=(); local sess pane pid kind cwd p msg
+  local -a fl=()
+  while IFS=$'\t' read -r sess pane pid kind cwd; do targets+=("$pane"); done < <(_panes)
+  [ "${#targets[@]}" -gt 0 ] || _die "no agent panes found (see: overseer list)"
+  case "$action" in
+    status) _need jq; printf 'PANE\tHARNESS\tSTATE\n'; for p in "${targets[@]}"; do ( _fleet_status "$p" ) || true; done ;;
+    read)   _need jq; for p in "${targets[@]}"; do printf '===== %s =====\n' "$p"; ( cmd_read "$p" ) || printf '(unavailable)\n'; done ;;
+    wait)   _need jq; for p in "${targets[@]}"; do printf '# %s: ' "$p"; ( cmd_wait "$p" "$@" ) || true; done ;;
+    send|chat)
+      [ "$action" = chat ] && _need jq
+      while :; do case "${1:-}" in --yes|--force) fl+=("$1"); shift ;; *) break ;; esac; done
+      msg="${1:-}"; [ -n "$msg" ] || _die "usage: overseer fleet $action [--yes|--force] <message>  (broadcasts to every agent pane)"
+      for p in "${targets[@]}"; do
+        printf '===== %s =====\n' "$p"
+        if [ "$action" = send ]; then ( cmd_send ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true
+        else ( cmd_chat ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true; fi
+      done ;;
+    *) _die "usage: overseer fleet <status|read|wait [timeout]|send [--yes] <msg>|chat [--yes] <msg>>" ;;
+  esac
+}
 # turn-based interaction with a PLAIN shell pane (not a claude TUI): run one command line, wait for
 # it to finish, print its output + exit code. completion is a unique sentinel line the wrapped
 # command prints last (prompt-agnostic, unlike watching for PS1). the user watches it run live.

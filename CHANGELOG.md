@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-07-20
+
+### Added
+- **`fleet` — one command over every agent pane at once.** A thin fan-out on top of the existing
+  per-pane commands (not a scheduler): `fleet status` prints one line per discovered Claude/Codex pane
+  (harness + idle/busy/awaiting); `fleet read` and `fleet wait [timeout]` fan those out; `fleet send` /
+  `fleet chat [--yes] <msg>` **broadcast** the same message to all agent panes. Each pane is handled in
+  its own subshell, so one pane erroring (mid-turn, timed out, exited) never aborts the batch, and every
+  pane keeps its own guards (confirm-unless-`--yes`, mid-turn refuse, per-pane lock). Verified live:
+  `status`/`read`/`wait` across 4 mixed panes, and `send`/`chat` argument threading (`flags → pane →
+  msg`) in isolation without broadcasting to live sessions.
+
 ## [0.5.11] - 2026-07-20
 
 ### Added

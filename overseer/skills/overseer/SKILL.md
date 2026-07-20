@@ -39,6 +39,7 @@ from stdin.
 | `chat [--yes\|--force] <target> <message\|-> [timeout]` | **Agent pane (Claude or Codex).** Send the message, **wait for the turn to finish**, then print the reply. The human round-trip. If the agent stops at an interactive prompt (permission / plan / select menu) it returns that question + how to answer instead of hanging. `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `send [--yes\|--force] <target> <message\|->` | **Agent pane (Claude or Codex).** Place + submit the message, then confirm the turn actually started before returning (so a following `wait`/`read` doesn't race) — but do **not** wait for the reply (use `chat` for that). `--force` skips the mid-turn guard. | **SIDE EFFECT** |
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
+| `fleet <status\|read\|wait\|send\|chat> [args]` | **Every agent pane at once** (a fan-out over the per-pane commands; each pane is handled in isolation so one failure never aborts the batch). `status` prints one line per pane (harness + idle/busy/awaiting); `read` and `wait [timeout]` fan those out; `send`/`chat [--yes] <msg>` **broadcast** the same message to all agent panes, each still subject to its own confirm/mid-turn guard. Use `status` to survey many sessions; broadcast only when the user explicitly asks to message every agent. | status/read/wait read-only · send/chat **SIDE EFFECT** |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
 | `menu <target> <item> [nav-key]` | **Agent (Claude/Codex).** Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
@@ -68,6 +69,9 @@ EOF
 - "What is that claude working on / show its latest chat" → `read` (transcript is clean;
   prefer it over `peek`, which is a noisy TUI screenshot).
 - "Which sessions/panes are running" → `list` (claude panes) or `list --all` (every pane).
+- "How are all my agents doing / act on all of them" → `fleet status` (one line per pane: idle/busy/
+  awaiting), `fleet read`/`fleet wait` to fan those out; `fleet send`/`fleet chat` only when the user
+  explicitly asks to broadcast the same message to every agent.
 - "Ask it X and tell me what it says" → `chat` (sends, waits, returns the answer).
 - "Reply to it / send it X on my behalf" → `chat` (or `send` if you do not need the reply),
   under the rules below.
