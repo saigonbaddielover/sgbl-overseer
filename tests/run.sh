@@ -9,6 +9,8 @@ export CLAUDE_HOME="$HERE/.home" CODEX_HOME="$HERE/.home"
 . "$LIB/transcript.sh"
 # shellcheck source=../overseer/skills/overseer/scripts/lib/tui.sh
 . "$LIB/tui.sh"
+# shellcheck source=../overseer/skills/overseer/scripts/lib/discovery.sh
+. "$LIB/discovery.sh"
 
 fail=0
 eq() {
@@ -45,6 +47,13 @@ eq "codex aborted!=busy"   ""                          "$(_cx_is_busy "$FIX/code
 eq "awaiting claude"       "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-claude.txt")" >/dev/null 2>&1; echo $?)"
 eq "awaiting codex"        "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-codex.txt")" >/dev/null 2>&1; echo $?)"
 eq "awaiting none"         "1"                         "$(_awaiting_text "$(cat "$FIX/awaiting-none.txt")" >/dev/null 2>&1; echo $?)"
+
+eq "is_shell bash"         "0"                         "$(_is_shell bash; echo $?)"
+eq "is_shell login -zsh"   "0"                         "$(_is_shell -zsh; echo $?)"
+eq "is_shell fish"         "0"                         "$(_is_shell fish; echo $?)"
+eq "is_shell nu"           "0"                         "$(_is_shell nu; echo $?)"
+eq "is_shell reject node"  "1"                         "$(_is_shell node; echo $?)"
+eq "is_shell reject claude" "1"                        "$(_is_shell claude; echo $?)"
 
 if [ "$fail" = 0 ]; then
   printf 'PASS: all parser fixture tests\n'; exit 0

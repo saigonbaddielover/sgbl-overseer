@@ -5,6 +5,40 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-07-20
+
+### Fixed
+- **`clear-box` no longer declares a multi-row input box empty while a row above the cursor still holds
+  text.** Emptiness was read from the cursor row only (`_realtext`), so after `C-u` cleared the last
+  line — leaving the cursor on a blank row with earlier lines still filled — the box read as empty and a
+  stale first line survived into the next paste. It now treats the box as empty only when the cursor row
+  is blank **and** still carries the prompt glyph (`❯`/`›`); a blank row without the glyph means content
+  remains above, so it keeps clearing. Falls through to the old cursor-row test if the glyph can't be
+  seen (broken UTF-8 locale), never stricter than before. Reproduced and verified live on Codex.
+
+### Added
+- **Two env tunables, validated at startup:** `OVERSEER_TIMEOUT` (default `600`) sets the fallback
+  `[timeout]` for `chat`/`wait`/`sh`; `OVERSEER_POLL_INTERVAL` (default `0.25`s) sets the poll cadence.
+  A non-numeric value fails loudly at launch instead of being silently read as `0`. Replaces the
+  scattered hard-coded `600`/`0.25` literals with one config layer.
+- **Per-pane advisory lock** so two concurrent `overseer` box-mutating commands (`send`/`chat`/`sh`/
+  `slash`/`quit`/`menu`) on the *same* pane serialize instead of interleaving keystrokes and corrupting
+  each other's input box. Best-effort `flock` (held only for the box-mutation critical section, released
+  before the read-only reply wait); if `flock` is absent, the lock dir is unwritable, or the wait times
+  out, the command proceeds unlocked — never blocked. Different panes never contend.
+
+### Changed
+- **Broadened the "idle shell" allowlist** (`sh`/`quit`) behind one `_is_shell` helper: adds `mksh`,
+  `ash`, `tcsh`, `csh`, `nu`, `xonsh`, `elvish` and their login-shell (`-`-prefixed) forms to the
+  existing `sh`/`bash`/`zsh`/`fish`/`dash`/`ksh`. `sh` on a non-Bourne interactive shell (and `quit`
+  confirming the pane returned to one) no longer wrongly refuses. Covered by new fixture tests.
+
+### Docs
+- Spelled out the fast-path's `CLAUDE_HOME` dependency (README + skill): the event hooks accelerate a
+  driven Claude session only when it shares overseer's `~/.claude`; a session under another user, a
+  custom `CLAUDE_HOME`, or started before the plugin was installed falls back to polling (~2s), never
+  blocked.
+
 ## [0.5.8] - 2026-07-20
 
 ### Fixed

@@ -78,6 +78,10 @@ All work goes through one script; the agent calls it as
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
 
+Two environment variables tune the defaults (both validated at startup, so a bad value fails loudly):
+`OVERSEER_TIMEOUT` (default `600`) is the fallback `[timeout]` seconds for `chat`/`wait`/`sh`, and
+`OVERSEER_POLL_INTERVAL` (default `0.25`) is the poll cadence in seconds.
+
 ## How it works
 
 - **Delivery** is one atomic **bracketed paste**, verified before submit — uniform for one line, many
@@ -105,7 +109,9 @@ surface a permission/menu prompt the moment it appears). They are wired **automa
 `settings.json` editing. Every signal is only an accelerator: the transcript stays the source of truth
 (an answer is never read half-written) and the on-screen prompt stays the arbiter for awaiting, so a
 session the hooks do not cover — or a Codex pane, which has none — just falls back to polling, never
-worse.
+worse. The fast path assumes the driven Claude session shares overseer's `~/.claude` (`CLAUDE_HOME`);
+one running as another user, under a custom `CLAUDE_HOME`, or started before the plugin was installed
+simply polls (~2s slower), never blocked.
 
 ## Caveats
 

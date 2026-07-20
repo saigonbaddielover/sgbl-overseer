@@ -1,5 +1,19 @@
 # shellcheck shell=bash
 
+_OVERSEER_LOCK_FD=''
+_lock_pane() {
+  command -v flock >/dev/null 2>&1 || return 0
+  local pane="$1" d="${TMPDIR:-/tmp}/overseer-$UID" f
+  mkdir -p "$d" 2>/dev/null || return 0
+  f="$d/pane-${pane//[!0-9A-Za-z]/_}.lock"
+  exec {_OVERSEER_LOCK_FD}>"$f" 2>/dev/null || { _OVERSEER_LOCK_FD=''; return 0; }
+  flock -w 30 "$_OVERSEER_LOCK_FD" 2>/dev/null || return 0
+}
+_unlock_pane() {
+  [ -n "$_OVERSEER_LOCK_FD" ] || return 0
+  exec {_OVERSEER_LOCK_FD}>&- 2>/dev/null || true
+  _OVERSEER_LOCK_FD=''
+}
 # a pane in tmux copy-mode (user scrolled up) freezes capture on the scrolled view and routes keys
 # to copy-mode instead of the app; cancel it so every read/write acts on the live prompt. no-op
 # when the pane is not in a mode.
@@ -53,6 +67,11 @@ _realtext() {
 # strip leading/trailing whitespace, matching what _realtext does to the rendered box, so a
 # delivery-only leading space (added to dodge command mode) never fails the equality check.
 _trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; s="${s%"${s##*[![:space:]]}"}"; printf '%s' "$s"; }
+_box_empty() {
+  local pane="$1"
+  [ -n "$(_realtext "$pane")" ] && return 1
+  _inline "$pane" | grep -qE '❯|›'
+}
 # fully empty the input box. C-u kills one line at a time, so a multi-line box (or an
 # uncollapsed inline paste) needs several; loop until it reads empty (dim ghost only).
 # deterministic on line count, unlike a fixed number of C-u.
@@ -60,7 +79,7 @@ _clear_box() {
   local pane="$1" i
   _wake_pane "$pane"
   for i in $(seq 1 40); do
-    [ -z "$(_realtext "$pane")" ] && return 0
+    _box_empty "$pane" && return 0
     tmux send-keys -t "$pane" C-u
     _nap
   done
