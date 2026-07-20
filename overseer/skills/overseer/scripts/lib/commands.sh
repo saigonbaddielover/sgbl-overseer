@@ -389,3 +389,28 @@ cmd_deploy() {
   tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
     && printf 'overseer: deployed scripts to %s:~/%s/\n' "$host" "$dest"
 }
+cmd_winshow() {
+  _need ssh; _need iconv; _need base64
+  local host="${1:-}" app="${2:-Terminal}"
+  [ -n "$host" ] || _die "usage: overseer winshow <host> [app]   (open a GUI app on the VISIBLE console session of a remote WINDOWS ssh host; app = a Start-menu name, an AUMID, or a full exe path; default Windows Terminal. e.g. overseer winshow ndman@100.77.19.60 'Notepad')"
+  local ps="$_dir/win-show.ps1"
+  [ -f "$ps" ] || _die "missing launcher payload: $ps"
+  local boot='$f=Join-Path $env:TEMP "overseer-winshow.ps1"; Set-Content -LiteralPath $f -Value ([Console]::In.ReadToEnd()) -Encoding UTF8; powershell -NoProfile -ExecutionPolicy Bypass -File $f; $e=$LASTEXITCODE; Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; exit $e'
+  local bb64; bb64=$(printf '%s' "$boot" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n') || _die "could not encode the launcher bootstrap"
+  local esc="${app//\'/\'\'}"
+  local cmdir="${TMPDIR:-/tmp}/overseer-ssh-$UID"; mkdir -p "$cmdir" 2>/dev/null || true
+  local i rc=0 out=''
+  for i in 1 2 3; do
+    rc=0
+    # shellcheck disable=SC2086
+    out=$({ printf "\$App = '%s'\n" "$esc"; cat "$ps"; } \
+      | ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
+        -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$host" "powershell -NoProfile -EncodedCommand $bb64" 2>&1) || rc=$?
+    [ "$rc" = 255 ] || break
+    _nap
+  done
+  out=${out//$'\r'/}
+  local line; line=$(printf '%s\n' "$out" | grep -aE '^(OK|ERR) ' | head -1)
+  printf '%s\n' "${line:-$out}"
+  return "$rc"
+}

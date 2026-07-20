@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-20
+
+### Added
+- **Open a GUI on a remote Windows host's visible desktop (`winshow`).** `overseer winshow <host> [app]`
+  opens a GUI app — default Windows Terminal, or any Start-menu name / AUMID / full exe path — on the
+  **console session** of a remote Windows machine over plain ssh. overseer itself can't run on Windows
+  (no `/proc`, no native tmux); it only ssh-executes a small PowerShell launcher. An ssh login on
+  Windows lands in the non-interactive **Session 0**, so a naive GUI launch is invisible — `winshow`
+  bridges to the logged-in desktop with a throwaway interactive scheduled task (`-LogonType Interactive`
+  as the live-resolved console user) and clears two silent traps: a laptop **on battery** (default tasks
+  carry `DisallowStartIfOnBatteries`, so they sit `Queued` and never launch) and Windows Terminal's
+  **app-execution-alias** stub (launched by AUMID via `explorer.exe shell:AppsFolder\…`, not a direct
+  `CreateProcess`). It confirms a new top-level window appeared and errors clearly when nobody is at the
+  console. Needs an admin ssh login on the Windows host. This supersedes the earlier "run the agent in
+  WSL2" guidance — a Windows machine's desktop is now reachable directly.
+
 ## [0.6.0] - 2026-07-20
 
 ### Added
