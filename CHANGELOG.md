@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-20
+
+### Added
+- **Drive panes on remote Linux hosts over SSH (`on`, `deploy`).** `overseer on <host> <command> [args]`
+  runs any command on a remote ssh host and streams the result back; `overseer deploy <host>` copies the
+  scripts to `~/.overseer` there first. The *whole* program executes remote-side, so its tmux / `/proc` /
+  transcript reads stay co-located and discovery + completion detection work unchanged — only the
+  invocation and result cross the wire. A blocking `chat`/`wait`/`sh` runs its poll loop on the remote
+  (reading that host's own transcript and hook markers — no new event channel); one-shots reuse one
+  multiplexed connection via `ControlMaster`+`ControlPersist`. `<host>` is any ssh target (`user@host`, a
+  `~/.ssh/config` alias, or a Tailscale MagicDNS name); credentials are ssh's own, so overseer keeps no
+  daemon, DB, or token store. `overseer on <host> doctor` is the remote preflight. New overrides:
+  `OVERSEER_REMOTE_BIN`, `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`. Native Windows stays out of scope (no
+  `/proc`, no native tmux); run the agent in WSL2 and target that as ordinary Linux.
+
 ## [0.5.17] - 2026-07-20
 
 ### Docs
