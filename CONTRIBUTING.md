@@ -66,14 +66,19 @@ gh pr create --fill
 ## Release
 
 1. On a branch, bump `version` in **both** `overseer/.claude-plugin/plugin.json` and the
-   `.claude-plugin/marketplace.json` entry (they must match — `claude plugin tag` enforces it).
-2. Move the `Unreleased` notes in `CHANGELOG.md` under the new version + date.
+   `.claude-plugin/marketplace.json` entry (they must match — CI and `claude plugin tag` enforce it).
+2. Move the `Unreleased` notes in `CHANGELOG.md` under the new version + date. CI **fails the PR** if the
+   version changed without a matching `## [x.y.z]` heading.
 3. Open the PR, get CI green, merge to `main`.
-4. From `main`, cut and push the tag — the `release` workflow publishes the GitHub Release automatically:
 
-```
-claude plugin tag ./overseer --push -m "overseer %s"   # tags overseer--v<version>, pushes it
-```
+That is the whole flow — **tagging and releasing are automatic**. On every push to `main` the `autotag`
+workflow reads the plugin version and, if `overseer--v<version>` does not already exist, creates the tag
+and publishes the GitHub Release. It is idempotent: a merge that doesn't bump the version is a no-op.
+
+You can still cut a tag by hand (`claude plugin tag ./overseer --push`) — `autotag` sees the tag already
+exists and stands down, and the `release` workflow handles that path. Note `autotag` publishes the
+release itself rather than leaning on `release.yml`, because a tag pushed by a workflow using the default
+`GITHUB_TOKEN` deliberately does not trigger further workflows.
 
 Users update with `/plugin marketplace update sgbl` + `/plugin update overseer` + `/reload-plugins`
 (no restart).

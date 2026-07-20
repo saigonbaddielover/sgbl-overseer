@@ -202,12 +202,16 @@ git clone https://github.com/saigonbaddielover/sgbl-overseer
 /plugin install overseer@sgbl
 ```
 
-Validate, then cut and push a release tag — CI publishes the GitHub Release automatically:
+Validate locally (CI can't run `claude plugin validate` — the CLI isn't on the runner):
 
 ```
 claude plugin validate --strict ./overseer
-claude plugin tag ./overseer --push   # tags overseer--v<version>, pushes it, release workflow does the rest
+bash tests/run.sh
 ```
+
+Releasing is automatic: bump the version in **both** manifests, land the PR, and the `autotag` workflow
+tags `overseer--v<version>` on `main` and publishes the GitHub Release. CI fails a version bump that
+arrives without a matching `CHANGELOG.md` heading.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected). Design
 notes: [why overseer stays one bash program](docs/DECISIONS.md) · [porting beyond Linux](docs/PORTING.md).
