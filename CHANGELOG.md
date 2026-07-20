@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-07-20
+
+### Fixed
+- **Event-mode wake now survives a custom `CLAUDE_HOME`.** The bundled `Stop` hook wrote the turn-done
+  marker to a hardcoded `$HOME/.claude/turn-done/`, while the reader looked under `$CLAUDE_HOME/turn-done/`.
+  When `CLAUDE_HOME` was overridden the two diverged, silently disabling the ~0.25s event wake and
+  dropping `chat`/`wait` back to ~2s polling. The hook now honors `${CLAUDE_HOME:-$HOME/.claude}`.
+- **The Claude turn-done signal id is now read from the transcript's `sessionId`**, not parsed from the
+  `.jsonl` filename. `basename` matched the session id only as long as the on-disk filename stayed exactly
+  `<sessionId>.jsonl`; deriving it from the canonical field keeps the event wake working if that ever gains
+  a suffix.
+
+### Changed
+- **Codex busy-check does one streaming `jq` pass instead of three**, and both wait loops re-scan the
+  transcript only when its size/mtime actually changed. A Codex `wait` (no Stop hook, so it polls every
+  ~0.25s) was re-parsing the whole rollout up to four times per tick; on a multi-megabyte session that is
+  now skipped whenever the file is unchanged. No behavior change — turn counts only grow when the file does.
+
 ## [0.5.3] - 2026-07-19
 
 ### Changed

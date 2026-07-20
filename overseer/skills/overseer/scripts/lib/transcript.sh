@@ -20,6 +20,7 @@ _last_prompt() {
 _last_reply() {
   jq -rs '[ .[] | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n")) ] | last // ""' "$1" 2>/dev/null
 }
+_sid_from_jsonl() { jq -r 'select(.sessionId != null and .sessionId != "") | .sessionId' "$1" 2>/dev/null | head -1; }
 # ---- Codex rollout readers (~/.codex/sessions/**/rollout-*.jsonl) ----------
 # a Codex turn is an `event_msg` task_started ... task_complete pair; task_complete even carries the
 # reply verbatim as last_agent_message. so turns = completed count, busy = a start with no matching
@@ -27,10 +28,14 @@ _last_reply() {
 # injected AGENTS.md `#...` / `<environment_context>` wrappers, like the claude reader does).
 _cx_turn_count() { local n; n=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' "$1" 2>/dev/null | wc -l); echo "${n:-0}"; }
 _cx_is_busy() {
-  local st ct ab
-  st=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_started")' "$1" 2>/dev/null | wc -l)
-  ct=$(jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' "$1" 2>/dev/null | wc -l)
-  ab=$(jq -c 'select(.type=="event_msg" and .payload.type=="turn_aborted")' "$1" 2>/dev/null | wc -l)
+  local counts st ct ab
+  counts=$(jq -rn 'reduce inputs as $e ([0,0,0];
+    if $e.type=="event_msg" then ($e.payload.type) as $t |
+      if $t=="task_started" then .[0]+=1
+      elif $t=="task_complete" then .[1]+=1
+      elif $t=="turn_aborted" then .[2]+=1 else . end
+    else . end) | "\(.[0]) \(.[1]) \(.[2])"' "$1" 2>/dev/null || true)
+  read -r st ct ab <<< "$counts" || true
   [ "${st:-0}" -gt "$(( ${ct:-0} + ${ab:-0} ))" ]
 }
 _cx_last_reply() { jq -rs '[ .[] | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty ] | last // ""' "$1" 2>/dev/null; }
@@ -49,6 +54,7 @@ _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count
 _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$2" ;;    esac; }
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
+_file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
 # a turn-done signal for this session at or after `since`: the Stop hook touches
 # ~/.claude/turn-done/<session_id> at each turn end, so its mtime is the last turn-end time.
 _signal_since() {   # sid since_epoch
@@ -63,13 +69,15 @@ _signal_since() {   # sid since_epoch
 # every tick. args: kind, transcript_path, baseline_turn_count, timeout_s, [claude sid], [since_epoch].
 _wait_reply() {
   local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" i=0 woke=0
-  local deadline=$((SECONDS + timeout))
+  local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$kind" = claude ] && [ "$woke" = 0 ] && [ -n "$sid" ] && _signal_since "$sid" "$since" && woke=1
     # the signal only says "look now"; correctness is the transcript actually showing the new turn,
     # so a reply is never read before it is flushed. codex has no signal -> check every tick.
-    if { [ "$woke" = 1 ] || [ "$kind" = codex ] || [ $((i % 8)) -eq 0 ]; } && [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ]; then
-      return 0
+    sig=$(_file_sig "$path")
+    if { [ "$woke" = 1 ] || [ "$kind" = codex ] || [ $((i % 8)) -eq 0 ]; } && [ "$sig" != "$last" ]; then
+      last="$sig"
+      [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0
     fi
     [ -n "$pane" ] && [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ] && _awaiting "$pane" >/dev/null 2>&1 && return 2
     i=$((i + 1)); _nap
@@ -78,14 +86,18 @@ _wait_reply() {
 }
 _wait_started() {
   local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" ctx
-  local deadline=$((SECONDS + timeout))
+  local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
     if [ -z "$path" ] || [ ! -f "$path" ]; then
       ctx=$(_target_ctx "$target" 2>/dev/null) && IFS=$'\t' read -r _ _ path <<< "$ctx" || true
     fi
     if [ -n "$path" ] && [ -f "$path" ]; then
-      _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
-      [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }
+      sig=$(_file_sig "$path")
+      if [ "$sig" != "$last" ]; then
+        last="$sig"
+        _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
+        [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }
+      fi
     fi
     [ -n "$pane" ] && _awaiting "$pane" >/dev/null 2>&1 && { printf '%s' "$path"; return 2; }
     _nap
