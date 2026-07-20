@@ -5,6 +5,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-07-20
+
+### Changed
+- **All `/proc` access now sits behind a four-function OS seam** (`_p_children`, `_p_comm`, `_p_cwd`,
+  `_p_fds` in `discovery.sh`), dispatched on `$OVERSEER_OS`. The Linux branch is unchanged (verified
+  live: `list`/`read`/discovery identical to before); any other platform returns cleanly so discovery
+  reports "no agent pane" instead of reading a `/proc` that isn't there. This turns a future macOS port
+  from a rewrite into implementing four functions. `doctor`'s non-Linux message now names the OS and
+  points at the porting spec.
+
+### Docs
+- **`docs/PORTING.md`** — exact macOS (`ps`/`lsof`) mapping for each seam function, plus the other
+  Linux/GNU-isms a port must bridge (`stat -c` vs `-f`, `date +%N`, `flock`, macOS's stock bash 3.2) and
+  how to exercise the non-Linux path (`OVERSEER_OS=Darwin`). Runtime stays Linux-only; nothing is
+  claimed as supported that hasn't been live-verified.
+- **`docs/DECISIONS.md` (ADR-0001)** — records why overseer stays a single bash program rather than a
+  Rust/Go/Python rewrite (the work is tmux/`jq`/`/proc` orchestration, not computation; ships as source
+  with no build), and the concrete triggers that would reopen the question (Windows support, persistent
+  state / a real API, a third harness straining the dispatch seams).
+
 ## [0.5.9] - 2026-07-20
 
 ### Fixed

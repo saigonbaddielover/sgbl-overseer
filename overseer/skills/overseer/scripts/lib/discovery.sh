@@ -1,19 +1,24 @@
 # shellcheck shell=bash
 
+: "${OVERSEER_OS:=$(uname -s 2>/dev/null || echo unknown)}"
+_p_children() { case "$OVERSEER_OS" in Linux) cat /proc/"$1"/task/*/children 2>/dev/null ;; *) return 1 ;; esac; }
+_p_comm()     { case "$OVERSEER_OS" in Linux) cat "/proc/$1/comm" 2>/dev/null ;; *) return 1 ;; esac; }
+_p_cwd()      { case "$OVERSEER_OS" in Linux) readlink "/proc/$1/cwd" 2>/dev/null ;; *) return 1 ;; esac; }
+_p_fds()      { local fd; case "$OVERSEER_OS" in Linux) for fd in /proc/"$1"/fd/*; do readlink "$fd" 2>/dev/null; done ;; *) return 1 ;; esac; }
 # ---- pane discovery ---------------------------------------------------------
 # For a pane shell pid, return the child pid that owns a ~/.claude/sessions/<pid>.json
 _agent_pid() {
   local pane_pid="$1" c
-  for c in "$pane_pid" $(cat /proc/"$pane_pid"/task/*/children 2>/dev/null); do
+  for c in "$pane_pid" $(_p_children "$pane_pid"); do
     [ -f "$CLAUDE_HOME/sessions/$c.json" ] || continue
-    [ "$(cat "/proc/$c/comm" 2>/dev/null)" = claude ] && { printf '%s' "$c"; return 0; }
+    [ "$(_p_comm "$c")" = claude ] && { printf '%s' "$c"; return 0; }
   done
   return 1
 }
 # every descendant pid of a pid (recursive /proc children walk), one per line.
 _descendants() {
   local p="$1" c
-  for c in $(cat /proc/"$p"/task/*/children 2>/dev/null); do
+  for c in $(_p_children "$p"); do
     printf '%s\n' "$c"; _descendants "$c"
   done
 }
@@ -21,19 +26,18 @@ _descendants() {
 # OPEN, so read it straight off /proc/<pid>/fd. codex sits a level below the pane's node launcher, so
 # scan all descendants. echoes the rollout path (the transcript), returns 1 if the pane runs no codex.
 _codex_rollout() {
-  local pane_pid="$1" pid fd tgt
+  local pane_pid="$1" pid tgt
   for pid in $(_descendants "$pane_pid"); do
-    for fd in /proc/"$pid"/fd/*; do
-      tgt=$(readlink "$fd" 2>/dev/null) || continue
+    while IFS= read -r tgt; do
       case "$tgt" in */.codex/sessions/*rollout-*.jsonl) printf '%s' "$tgt"; return 0 ;; esac
-    done
+    done < <(_p_fds "$pid")
   done
   return 1
 }
 _codex_pid() {
   local pane_pid="$1" p
   for p in $(_descendants "$pane_pid"); do
-    [ "$(cat "/proc/$p/comm" 2>/dev/null)" = codex ] && { printf '%s' "$p"; return 0; }
+    [ "$(_p_comm "$p")" = codex ] && { printf '%s' "$p"; return 0; }
   done
   return 1
 }
@@ -61,7 +65,7 @@ _panes() {
       node)   _codex_pid "$pp" >/dev/null 2>&1 && kind=codex || continue ;;
       *) continue ;;
     esac
-    cwd=$(readlink "/proc/$pp/cwd" 2>/dev/null || echo '?')
+    cwd=$(_p_cwd "$pp" || echo '?')
     printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$pid_id" "$pp" "$kind" "$cwd"
   done < <(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_pid}	#{pane_current_command}' 2>/dev/null)
 }
@@ -89,7 +93,7 @@ _target_ctx() {
   pane=$(_resolve_pane "$1") || return 1
   pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null) || return 1
   if apid=$(_agent_pid "$pp"); then
-    cwd=$(readlink "/proc/$pp/cwd" 2>/dev/null || echo '?')
+    cwd=$(_p_cwd "$pp" || echo '?')
     sid=$(_sid_of "$apid") || true
     if [ -n "$sid" ]; then jl=$(_jsonl_of "$sid" "$cwd"); else jl=''; fi
     printf '%s\t%s\t%s' "$pane" claude "$jl"; return 0

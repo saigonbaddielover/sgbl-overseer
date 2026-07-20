@@ -5,7 +5,7 @@ cmd_list() {
   if [ "${1:-}" = --all ]; then
     printf 'SESSION\tPANE\tPANE_PID\tCOMMAND\tCWD\n'
     while IFS=$'\t' read -r s pid_id pp cmd; do
-      local cwd; cwd=$(readlink "/proc/$pp/cwd" 2>/dev/null || echo '?')
+      local cwd; cwd=$(_p_cwd "$pp" || echo '?')
       printf '%s\t%s\t%s\t%s\t%s\n' "$s" "$pid_id" "$pp" "$cmd" "$cwd"
     done < <(tmux list-panes -a -F '#{session_name}	#{pane_id}	#{pane_pid}	#{pane_current_command}' 2>/dev/null)
     return
@@ -278,7 +278,7 @@ _doctor_probe() {
 cmd_doctor() {
   local bad=0 n cver cxv
   printf 'overseer doctor (CLAUDE_HOME=%s)\n' "$CLAUDE_HOME"
-  if [ "$(uname -s)" = Linux ]; then printf '  [ok]   Linux\n'; else printf '  [FAIL] not Linux — discovery needs /proc\n'; bad=1; fi
+  if [ "$OVERSEER_OS" = Linux ]; then printf '  [ok]   Linux\n'; else printf '  [FAIL] not Linux (%s) — /proc discovery is unimplemented here; the macOS ps/lsof backend is specified in docs/PORTING.md but not built\n' "$OVERSEER_OS"; bad=1; fi
   [ -d /proc ] && printf '  [ok]   /proc present\n' || { printf '  [FAIL] /proc missing\n'; bad=1; }
   if command -v tmux >/dev/null 2>&1; then printf '  [ok]   tmux (%s)\n' "$(tmux -V 2>/dev/null)"; else printf '  [FAIL] tmux not found\n'; bad=1; fi
   if command -v jq >/dev/null 2>&1; then printf '  [ok]   jq (%s)\n' "$(jq --version 2>/dev/null)"; else printf '  [FAIL] jq not found — needed by read/chat/wait\n'; bad=1; fi

@@ -26,7 +26,9 @@ server-side.
 
 ## Requirements
 
-- **Linux** — agent discovery reads `/proc` (macOS/Windows not supported yet).
+- **Linux** — agent discovery reads `/proc` (macOS/Windows not supported yet; the `/proc` access sits
+  behind a small OS seam and a macOS `ps`/`lsof` backend is fully specced in
+  [docs/PORTING.md](docs/PORTING.md), unbuilt).
 - **tmux** — the target must run inside tmux (a plain PTY can't be driven; the kernel blocks keystroke
   injection and the screen buffer lives client-side).
 - **jq** — for transcript reading.
@@ -175,7 +177,8 @@ claude plugin validate --strict ./overseer
 claude plugin tag ./overseer --push   # tags overseer--v<version>, pushes it, release workflow does the rest
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected). Design
+notes: [why overseer stays one bash program](docs/DECISIONS.md) · [porting beyond Linux](docs/PORTING.md).
 
 ### Useful Claude Code commands
 
