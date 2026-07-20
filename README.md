@@ -81,6 +81,7 @@ All work goes through one script; the agent calls it as
 | `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
 | `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host (re-run to update). |
 | `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
+| `winshow <host> [app]` | **Remote (SSH), Windows target.** Open a GUI app — default Windows Terminal, or any Start-menu name / AUMID / full exe path — on the **visible console session** of a remote Windows host. Bridges SSH's Session 0 to the logged-in desktop via a transient interactive scheduled task, so the window appears on the physical screen; resolves the console user dynamically, runs even on battery, and confirms a new top-level window appeared. e.g. `winshow ndman@100.77.19.60`, `winshow win-host 'Notepad'`. |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
@@ -108,8 +109,24 @@ credentials are ssh's own — no daemon, DB, or token store. overseer adds `Cont
 so bursts of one-shot commands reuse one connection. A blocking `chat`/`wait`/`sh` polls remote-side and
 ssh just holds the pipe, so no separate event channel is needed. Pass `--yes` for a remote `chat`/`send`:
 without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVERSEER_REMOTE_BIN`
-(default `~/.overseer/scripts/overseer`), `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`. Native Windows is out of
-scope (no `/proc`, no native tmux) — run the agent inside WSL2 and target that as ordinary Linux.
+(default `~/.overseer/scripts/overseer`), `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`.
+
+The `on`/`deploy` model targets **Linux** (it runs overseer, which needs `/proc` + tmux). A **Windows**
+host in the tailnet is reached differently: overseer can't run there, but `winshow <host> [app]` opens a
+GUI on its **visible desktop** over plain ssh —
+
+```
+overseer winshow ndman@100.77.19.60           # open Windows Terminal on the screen the user sees
+overseer winshow win-host 'Notepad'           # any Start-menu name, an AUMID, or a full exe path
+```
+
+An ssh session on Windows lands in the non-interactive **Session 0**, so a naively launched GUI is
+invisible. `winshow` bridges to the logged-in **console session** with a throwaway interactive scheduled
+task (`-LogonType Interactive` as the console user, resolved live), which also clears the two silent
+traps: a laptop **on battery** (default tasks carry `DisallowStartIfOnBatteries`, so they sit `Queued`
+and never launch — `winshow` disables that) and Windows Terminal's **app-execution-alias** stub (launched
+by AUMID via `explorer.exe shell:AppsFolder\…`, not a direct `CreateProcess`). It errors clearly if no
+user is at the console (locked / logged off). Needs an admin ssh login on the Windows host.
 
 ## How it works
 
