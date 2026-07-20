@@ -4,7 +4,7 @@
 # For a pane shell pid, return the child pid that owns a ~/.claude/sessions/<pid>.json
 _agent_pid() {
   local pane_pid="$1" c
-  for c in "$pane_pid" $(cat "/proc/$pane_pid/task/$pane_pid/children" 2>/dev/null); do
+  for c in "$pane_pid" $(cat /proc/"$pane_pid"/task/*/children 2>/dev/null); do
     [ -f "$CLAUDE_HOME/sessions/$c.json" ] || continue
     [ "$(cat "/proc/$c/comm" 2>/dev/null)" = claude ] && { printf '%s' "$c"; return 0; }
   done
@@ -13,7 +13,7 @@ _agent_pid() {
 # every descendant pid of a pid (recursive /proc children walk), one per line.
 _descendants() {
   local p="$1" c
-  for c in $(cat "/proc/$p/task/$p/children" 2>/dev/null); do
+  for c in $(cat /proc/"$p"/task/*/children 2>/dev/null); do
     printf '%s\n' "$c"; _descendants "$c"
   done
 }

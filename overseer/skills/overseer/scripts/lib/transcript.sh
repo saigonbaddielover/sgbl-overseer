@@ -61,6 +61,14 @@ _marker_since() {
   m=$(stat -c %Y "$f" 2>/dev/null) || return 1
   [ "$m" -ge "$3" ]
 }
+_fsize() { stat -c %s "$1" 2>/dev/null || echo 0; }
+_turns_after() {
+  local kind="$1" path="$2" off="$3"
+  case "$kind" in
+    claude) tail -c "+$((off + 1))" "$path" 2>/dev/null | jq -c 'select(.type=="assistant" and .message.stop_reason!=null and .message.stop_reason!="tool_use")' 2>/dev/null | wc -l ;;
+    codex)  tail -c "+$((off + 1))" "$path" 2>/dev/null | jq -c 'select(.type=="event_msg" and .payload.type=="task_complete")' 2>/dev/null | wc -l ;;
+  esac
+}
 # a turn-done signal for this session at or after `since`: the Stop hook touches
 # ~/.claude/turn-done/<session_id> at each turn end, so its mtime is the last turn-end time.
 _signal_since() {   # sid since_epoch
@@ -71,7 +79,7 @@ _signal_since() {   # sid since_epoch
 # every ~2s so a session the hook does not cover still resolves. codex: no hook, so poll the rollout
 # every tick. args: kind, transcript_path, baseline_turn_count, timeout_s, [claude sid], [since_epoch].
 _wait_reply() {
-  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" i=0 woke=0
+  local kind="$1" path="$2" base="$3" timeout="${4:-600}" sid="${5:-}" since="${6:-0}" pane="${7:-}" bbytes="${8:-}" i=0 woke=0
   local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$kind" = claude ] && [ "$woke" = 0 ] && [ -n "$sid" ] && _signal_since "$sid" "$since" && woke=1
@@ -80,7 +88,8 @@ _wait_reply() {
     sig=$(_file_sig "$path")
     if { [ "$woke" = 1 ] || [ "$kind" = codex ] || [ $((i % 8)) -eq 0 ]; } && [ "$sig" != "$last" ]; then
       last="$sig"
-      [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0
+      if [ -n "$bbytes" ]; then [ "$(_turns_after "$kind" "$path" "$bbytes")" -gt 0 ] && return 0
+      else [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0; fi
     fi
     if [ -n "$pane" ] && { { [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ]; } || { [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since awaiting "$sid" "$since"; }; } && _awaiting "$pane" >/dev/null 2>&1; then return 2; fi
     i=$((i + 1)); _nap
@@ -88,7 +97,7 @@ _wait_reply() {
   return 1
 }
 _wait_started() {
-  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" sid="${7:-}" since="${8:-0}" ctx
+  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" sid="${7:-}" since="${8:-0}" bbytes="${9:-}" ctx
   local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
     [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since turn-started "$sid" "$since" && { printf '%s' "$path"; return 0; }
@@ -100,7 +109,8 @@ _wait_started() {
       if [ "$sig" != "$last" ]; then
         last="$sig"
         _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
-        [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }
+        if [ -n "$bbytes" ]; then [ "$(_turns_after "$kind" "$path" "$bbytes")" -gt 0 ] && { printf '%s' "$path"; return 0; }
+        else [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }; fi
       fi
     fi
     [ -n "$pane" ] && _awaiting "$pane" >/dev/null 2>&1 && { printf '%s' "$path"; return 2; }

@@ -62,6 +62,7 @@ cmd_send() {
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   [ "$force" = 0 ] && [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
   local base; base=$(_h_turn_count "$kind" "$path" 2>/dev/null); base="${base:-0}"
+  local bbytes; bbytes=$(_fsize "$path")
   local sid=''; [ "$kind" = claude ] && [ -n "$path" ] && [ -f "$path" ] && sid=$(_sid_from_jsonl "$path")
 
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
@@ -71,7 +72,7 @@ cmd_send() {
   fi
   local since; since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
-  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since") || rc=$?
+  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since" "$bbytes") || rc=$?
   case "$rc" in
     2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
     1) printf 'sent to %s:\n%s\n(could not confirm the turn started within 10s — peek: overseer peek %s)\n' "$pane" "$msg" "$target" ;;
@@ -93,9 +94,9 @@ cmd_chat() {
   local has_tx=0; { [ -n "$path" ] && [ -f "$path" ]; } && has_tx=1
   [ "$force" = 0 ] && [ "$has_tx" = 1 ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
 
-  local sid='' base=0 since
+  local sid='' base=0 since bbytes=''
   if [ "$has_tx" = 1 ]; then
-    [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path"); base=$(_h_turn_count "$kind" "$path")
+    [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path"); base=$(_h_turn_count "$kind" "$path"); bbytes=$(_fsize "$path")
   fi
   _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
   if [ "$confirm" = 1 ]; then
@@ -110,7 +111,7 @@ cmd_chat() {
     { [ -z "$path" ] || [ ! -f "$path" ]; } && _die "sent, but no transcript appeared for '$target' within 30s — check it with: overseer peek $target ; then resume: overseer wait $target"
     [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
   fi
-  local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" || rc=$?
+  local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" "$bbytes" || rc=$?
   case "$rc" in
     0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
        else printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"; fi ;;
@@ -129,7 +130,7 @@ cmd_wait() {
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
   if _h_is_busy "$kind" "$path"; then
     local sid rc; sid=''; [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
-    rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" || rc=$?
+    rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" "$(_fsize "$path")" || rc=$?
     case "$rc" in
       0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
       2) _report_awaiting "$pane" "$target" ;;
