@@ -208,6 +208,11 @@ the arbiter for awaiting, so a marker never causes a half-written read or a fals
 hooks do not cover — or a Codex pane, which has none — falls back to the same size/mtime-gated poll.
 Nothing breaks.
 
+The fast path also needs the driven Claude session to share overseer's `~/.claude` (`CLAUDE_HOME`): the
+hook writes the marker under *that session's* home and overseer's reader looks under *its own*, so a
+session running as another user, under a custom `CLAUDE_HOME`, or launched before the plugin was
+installed just polls — the same safe fallback, ~2s slower, never blocked.
+
 ## Requirements
 
 - Linux (uses `/proc` to map pane pid → agent: Claude via `~/.claude/sessions/<pid>.json`, Codex via

@@ -43,6 +43,13 @@ _harness_of() {
   _codex_pid "$1" >/dev/null 2>&1 && { printf codex; return 0; }
   return 1
 }
+_is_shell() {
+  case "$1" in
+    sh|bash|zsh|fish|dash|ksh|mksh|ash|tcsh|csh|nu|xonsh|elvish) return 0 ;;
+    -sh|-bash|-zsh|-fish|-dash|-ksh|-mksh|-ash|-tcsh|-csh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
 # prune by pane command first (claude runs as `claude`, codex as `node`) so the fd scan only runs
 # on plausible panes.
