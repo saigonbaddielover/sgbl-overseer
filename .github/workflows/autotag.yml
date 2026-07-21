@@ -27,10 +27,15 @@ jobs:
           fi
           tag="overseer--v$pv"
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "$tag already exists — nothing to release"
+            echo "$tag already exists"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+            echo "tagged $tag"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already published — nothing to do"
             exit 0
           fi
-          git tag "$tag"
-          git push origin "$tag"
           gh release create "$tag" --generate-notes --latest --verify-tag
-          echo "tagged and released $tag"
+          echo "released $tag"

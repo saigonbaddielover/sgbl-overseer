@@ -103,6 +103,40 @@ for surface in help README SKILL; do
   eq "$surface documents no command that does not exist" "" "$(printf '%s' "$extra" | sed 's/ *$//')"
 done
 
+WINDOC="$HERE/../docs/WINDOWS.md"
+SECDOC="$HERE/../SECURITY.md"
+CONTRIB="$HERE/../CONTRIBUTING.md"
+PRTPL="$HERE/../.github/pull_request_template.md"
+
+_has() { grep -qF "$2" "$1" && echo yes || echo no; }
+_hasre() { grep -qE "$2" "$1" && echo yes || echo no; }
+
+eq "README states the Linux controller / Windows target support model" "yes" "$(_hasre "$README" '^## Support model')"
+eq "SKILL frontmatter names the Windows broker commands" "yes" "$(sed -n '2p' "$SKILL" | grep -qE 'winbroker.*winchat|winchat.*winbroker' && echo yes || echo no)"
+eq "SKILL scope section covers both target kinds" "yes" "$(_hasre "$SKILL" '^## Scope: what runs where')"
+eq "README describes the Windows poll as mtime:size gated" "yes" "$(_has "$README" 'mtime:size')"
+eq "SKILL describes the Windows poll as mtime:size gated" "yes" "$(_has "$SKILL" 'mtime:size')"
+eq "README links the Windows doc" "yes" "$(_has "$README" 'docs/WINDOWS.md')"
+eq "SKILL links the Windows doc" "yes" "$(_has "$SKILL" 'docs/WINDOWS.md')"
+eq "Windows doc has a prerequisites section" "yes" "$(_hasre "$WINDOC" '^## Prerequisites')"
+eq "Windows doc has a security model section" "yes" "$(_hasre "$WINDOC" '^## Security model')"
+eq "SECURITY covers the Windows commands" "yes" "$(_has "$SECDOC" 'winbroker')"
+eq "SKILL safety rules cover the win* commands" "yes" "$(_hasre "$SKILL" '^## Safety rules for .*win\*')"
+eq "CONTRIBUTING has the Windows live-verification checklist" "yes" "$(_hasre "$CONTRIB" '^### Windows live verification')"
+eq "CONTRIBUTING documents the Windows contract tests" "yes" "$(_has "$CONTRIB" 'tests/win-contracts.ps1')"
+eq "PR template requires the Windows live checklist" "yes" "$(_has "$PRTPL" 'win-contracts.ps1')"
+eq "README walkthrough shows the broker lifecycle" "yes" "$(_hasre "$README" 'overseer winstop')"
+eq "SKILL walkthrough shows the broker lifecycle" "yes" "$(_hasre "$SKILL" 'overseer winstop')"
+
+_poll() { OVERSEER_POLL_INTERVAL="$1" bash "$ENTRY" --help >/dev/null 2>&1 && echo ok || echo rejected; }
+for good in 0.25 1 1.0 .5 2.5; do
+  eq "poll interval '$good' is accepted" "ok" "$(_poll "$good")"
+done
+eq "poll interval empty falls back to the default" "ok" "$(_poll '')"
+for bad in . 1..2 0 0.0 .0 abc 1x -1; do
+  eq "poll interval '$bad' is rejected" "rejected" "$(_poll "$bad")"
+done
+
 if [ "$fail" = 0 ]; then
   printf 'PASS: all parser fixture tests\n'; exit 0
 else

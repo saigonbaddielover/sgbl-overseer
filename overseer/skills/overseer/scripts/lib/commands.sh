@@ -375,7 +375,8 @@ cmd_on() {
   local bin="${OVERSEER_REMOTE_BIN:-\$HOME/.overseer/scripts/overseer}"
   local cmdir="${TMPDIR:-/tmp}/overseer-ssh-$UID"
   mkdir -p "$cmdir" 2>/dev/null || true
-  local rargs; printf -v rargs ' %q' "$@"
+  local rargs='' a
+  for a in "$@"; do rargs="$rargs '${a//\'/\'\\\'\'}'"; done
   # shellcheck disable=SC2086
   exec ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
     -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "$bin$rargs"

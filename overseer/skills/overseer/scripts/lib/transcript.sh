@@ -125,8 +125,8 @@ _wait_started() {
 _newest_with_turns() {
   local kind="$1" f
   case "$kind" in
-    claude) for f in $(ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -20); do [ "$(_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done ;;
-    codex)  for f in $(ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -20); do [ "$(_cx_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done ;;
+    claude) while IFS= read -r f; do [ -n "$f" ] && [ "$(_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done < <(ls -t "$CLAUDE_HOME"/projects/*/*.jsonl 2>/dev/null | head -20) ;;
+    codex)  while IFS= read -r f; do [ -n "$f" ] && [ "$(_cx_turn_count "$f")" -gt 0 ] && { printf '%s' "$f"; return 0; }; done < <(ls -t "$CODEX_HOME"/sessions/*/*/*/rollout-*.jsonl 2>/dev/null | head -20) ;;
   esac
   return 1
 }

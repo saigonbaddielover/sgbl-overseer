@@ -13,7 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: the tag must match both manifests and the changelog
+        run: |
+          tv=${GITHUB_REF_NAME#overseer--v}
+          pv=$(jq -r .version overseer/.claude-plugin/plugin.json)
+          mv=$(jq -r '.plugins[] | select(.name=="overseer") | .version' .claude-plugin/marketplace.json)
+          echo "tag=$tv plugin=$pv marketplace=$mv"
+          if [ "$tv" != "$pv" ] || [ "$tv" != "$mv" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match plugin.json ($pv) / marketplace.json ($mv)"
+            exit 1
+          fi
+          if ! grep -q "^## \[$tv\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$tv]' heading"
+            exit 1
+          fi
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes --latest --verify-tag
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already published"
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --generate-notes --latest --verify-tag

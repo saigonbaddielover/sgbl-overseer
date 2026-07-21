@@ -1,5 +1,5 @@
 ---
-description: Read or drive ANOTHER live agent process in a tmux pane from outside it — a running Claude Code or Codex session, or a plain shell. Use when the user wants to see the latest conversation of a claude or codex in a tmux pane they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell pane they are watching, or list which tmux panes are running what agent. read/chat/send/wait/list auto-detect the harness (Claude Code or Codex). Works on any pane the user watches, including tmux attached from a VSCode Remote-SSH terminal (tmux is server-side, so display location is irrelevant). Linux + tmux only; a plain non-tmux terminal cannot be driven.
+description: Read or drive ANOTHER live agent process from outside it — a running Claude Code or Codex session, or a plain shell — in a local or remote Linux tmux pane, or in a console window on a remote WINDOWS machine over SSH. Use when the user wants to see the latest conversation of a claude or codex they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell they are watching, list which tmux panes are running what agent, or start/drive/stop a claude, codex or pwsh on a Windows PC's visible desktop (winbroker/winchat/winsh/winread/winstop). read/chat/send/wait/list auto-detect the harness (Claude Code or Codex). Overseer itself runs on a Linux controller; its targets are Linux tmux panes (local or over ssh) and remote native Windows console brokers. Local pane discovery is Linux + tmux only; a plain non-tmux Linux terminal cannot be driven.
 ---
 
 # overseer — read and drive a live tmux pane (Claude Code, Codex, or a plain shell)
@@ -56,7 +56,7 @@ from stdin.
 | `winkeys <host>[/name] <key\|text>...` | **Remote (SSH), Windows target.** Inject named keys (`Enter` `Escape` `Up` `Down` `Tab` `Backspace` `C-c` …) or literal text into the broker child. Text is one burst; submit with a **separate** `Enter` (a TUI reads a burst-embedded newline as paste, not submit). | **SIDE EFFECT** |
 | `winsh <host>[/name] <command> [timeout]` | **Remote (SSH), Windows target.** Run one command line in the broker's **pwsh** child, wait via a unique sentinel, print output + exit code. The Windows peer of `sh` (needs `winbroker <host> pwsh`); **refuses a broker hosting an agent**, so a command is never typed into a chat box. | **SIDE EFFECT** |
 | `winread <host>[/name]` | **Remote (SSH), Windows target.** Last user prompt + last assistant reply from the broker's claude/codex, read from its transcript with the *same* `transcript.sh` readers (fetched over ssh). The Windows peer of `read` — prefer over `winpeek` (a noisy screenshot). | read-only |
-| `winchat [--yes] [--force] <host>[/name] <prompt\|-> [timeout]` | **Remote (SSH), Windows target.** The Windows peer of `chat` (needs `winbroker <host> claude\|codex`), with the same guards: refuses a **mid-turn** agent (`--force` bypasses), **refuses a Codex message starting with `!`** (Codex would run it as a shell command), prepends a space for Claude's `/ ! # @`, clears the input box, places the prompt with newlines injected as the composer's own newline key, and verifies it on screen before submitting (a multi-line prompt therefore arrives intact rather than submitting at its first line — `-` reads it from stdin), takes a per-host lock while typing, waits for your keypress unless `--yes`, returns the **question** if the agent stops at an interactive prompt, and fails fast if the agent exits mid-turn. Turn completion is read from the agent's on-disk transcript with the *same* `transcript.sh` readers (fetched back over ssh, refetched only when the broker reports it grew). | **SIDE EFFECT** |
+| `winchat [--yes] [--force] <host>[/name] <prompt\|-> [timeout]` | **Remote (SSH), Windows target.** The Windows peer of `chat` (needs `winbroker <host> claude\|codex`), with the same guards: refuses a **mid-turn** agent (`--force` bypasses), **refuses a Codex message starting with `!`** (Codex would run it as a shell command), prepends a space for Claude's `/ ! # @`, clears the input box, places the prompt with newlines injected as the composer's own newline key, and verifies it on screen before submitting (a multi-line prompt therefore arrives intact rather than submitting at its first line — `-` reads it from stdin), takes a per-host lock while typing, waits for your keypress unless `--yes`, returns the **question** if the agent stops at an interactive prompt, and fails fast if the agent exits mid-turn. Turn completion is read from the agent's on-disk transcript with the *same* `transcript.sh` readers (fetched back over ssh, refetched only when the broker's reported `mtime:size` signature changes). | **SIDE EFFECT** |
 | `winwait <host>[/name] [timeout]` | **Remote (SSH), Windows target.** Block until the broker's agent finishes its turn, or return the **question** at once if it stopped at an interactive prompt; prints `idle` if it was not busy. The Windows peer of `wait` — resume with this after a `winchat` timeout instead of re-sending. | read-only |
 | `winstop <host>[/name]` | **Remote (SSH), Windows target.** Stop the broker and its child on the host. | **SIDE EFFECT** |
 
@@ -109,13 +109,23 @@ EOF
   no numbering, or a searchable/type-to-filter picker is deliberately not matched (matching them would
   false-positive on ordinary prose). `peek <t>` to see what it is asking and answer with `keys`.
 
-## Scope: tmux panes only
+## Scope: what runs where
 
-This drives panes running under **tmux** (tmux is client/server, so a pane attached from a VSCode
-Remote-SSH terminal is driven server-side and the user still sees it live). A **plain, non-tmux
-terminal cannot be driven**: the kernel blocks keystroke injection into a bare PTY
-(`dev.tty.legacy_tiocsti=0`) and its screen buffer lives in the client (e.g. xterm.js on the user's
-machine), not here. To make such a terminal drivable, run it inside tmux.
+overseer is a **Linux controller** and drives two kinds of target:
+
+- **Linux tmux panes** — local, or on another Linux host over ssh (`deploy` + `on`, which runs the
+  whole program remote-side). tmux is client/server, so a pane attached from a VSCode Remote-SSH
+  terminal is driven server-side and the user still sees it live.
+- **Remote native Windows consoles** over plain ssh — the `win*` commands, which drive a PowerShell
+  **broker** on the host's visible desktop. No tmux, no WSL, and overseer itself never runs there.
+
+A **plain, non-tmux Linux terminal cannot be driven**: the kernel blocks keystroke injection into a
+bare PTY (`dev.tty.legacy_tiocsti=0`) and its screen buffer lives in the client (e.g. xterm.js on the
+user's machine), not here. To make such a terminal drivable, run it inside tmux. Direct **pane
+discovery** (`list`, `%N` targets) is likewise Linux + tmux only — it reads `/proc`.
+
+Windows prerequisites, the trust boundary, and the security notes live in
+[docs/WINDOWS.md](../../../docs/WINDOWS.md); read it before running any `win*` command.
 
 ## Remote hosts (SSH / Tailscale)
 
@@ -144,9 +154,23 @@ overseer on sandbox sh %3 'git pull'          # or drive a remote shell pane
   ssh key — exactly what `overseer on <host> doctor` verifies. Overrides: `OVERSEER_REMOTE_BIN` (remote
   overseer path, default `~/.overseer/scripts/overseer`), `OVERSEER_SSH` / `OVERSEER_SSH_OPTS`.
 - The `on`/`deploy` path is **Linux-only** (overseer itself needs `/proc` + tmux, so it can't run on a
-  Windows host). For a **Windows** machine in the tailnet, `winshow <host> [app]` instead opens a GUI on
-  its **visible desktop** over plain ssh — overseer runs locally and only ssh-executes a PowerShell
-  launcher. An ssh login on Windows lands in the non-interactive **Session 0**, so a naive launch is
+  Windows host). A **Windows** machine in the tailnet is a first-class target through the `win*`
+  commands instead: overseer runs locally and only ssh-executes PowerShell payloads there. The full
+  lifecycle is broker → drive → stop:
+
+```
+overseer winbroker win-host claude C:\repo     # start a VISIBLE claude on the user's desktop
+overseer winlist win-host                      # which brokers exist, their child, alive?
+overseer winchat --yes win-host 'run the tests' 900   # send a prompt, wait the turn, print the reply
+overseer winread win-host                      # last prompt + last reply, any time
+overseer winwait win-host 900                  # resume waiting after a timeout, instead of re-sending
+overseer winstop win-host                      # stop the broker and its child
+```
+
+  Use `winbroker <host> pwsh` plus `winsh <host> '<command>'` for a shell instead of an agent, and
+  `winbroker <host>/name …` to run several side by side. `winshow <host> [app]` is the one-shot
+  cousin — it just opens a GUI app on the visible desktop and returns. An ssh login on Windows lands
+  in the non-interactive **Session 0**, so a naive launch is
   invisible; `winshow` bridges to the logged-in **console session** with a transient interactive
   scheduled task (`-LogonType Interactive` as the live-resolved console user), and clears the silent
   traps — a laptop **on battery** (default tasks refuse to start, sitting `Queued` forever) and Windows
@@ -205,7 +229,7 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
    **title**; only Status / Config / Usage / Stats take the highlight and cycle. `peek raw` tells you
    which ones actually get selected.
 
-## Safety rules for `send`/`sh` (READ BEFORE SENDING)
+## Safety rules for `send`/`sh`/`win*` (READ BEFORE SENDING)
 
 1. **The target almost always runs with bypass permissions on** (`--dangerously-skip-permissions`).
    Anything you submit auto-executes in that agent with no confirmation gate. Treat `send`
@@ -232,6 +256,15 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
    you get "session looks mid-turn", either `wait <t>` for it to finish, or interrupt it with
    `keys <t> Escape`, then retry. If it is **actually idle** — a turn was aborted mid-tool (a
    false-busy deadlock) — rerun with `--force` to bypass the guard.
+7. **The `win*` commands are remote execution on somebody's live desktop.** Rules 1–6 apply to
+   `winchat`/`winkeys`/`winsh` exactly as to `chat`/`keys`/`sh`, plus: `winbroker` spawns a **visible**
+   window in the console user's session and `winstop` kills that child — both are user-visible side
+   effects on a screen a person is looking at, so run them only when asked. `winsh` runs an arbitrary
+   command line under the console user's credentials (it refuses a broker hosting an agent, so a
+   command can never land in a chat box, but is otherwise unrestricted). The broker's named pipe is the
+   trust boundary: its random name and auth token live in an ACL'd descriptor on the host — **never
+   print, log, or relay a broker descriptor**. Prerequisites and the full model:
+   [docs/WINDOWS.md](../../../docs/WINDOWS.md).
 
 ## Gotchas the script already handles (do not re-derive)
 

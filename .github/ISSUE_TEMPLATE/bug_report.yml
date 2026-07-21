@@ -31,6 +31,26 @@ body:
     id: tmuxver
     attributes:
       label: tmux version (`tmux -V`)
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target
+      description: What were you driving?
+      options:
+        - Local Linux tmux pane
+        - Remote Linux tmux pane (deploy/on)
+        - Remote Windows console (win* commands)
+    validations:
+      required: true
+  - type: textarea
+    id: windows
+    attributes:
+      label: Windows target details (only for a `win*` bug)
+      description: |
+        Windows build (`winver`), `pwsh --version`, whether the SSH login and the console user are the
+        same account, and the output of `overseer winlist <host>`.
+        **Redact host names, user names and IPs — and never paste a broker descriptor: it holds the auth token.**
+      render: text
   - type: textarea
     id: extra
     attributes:

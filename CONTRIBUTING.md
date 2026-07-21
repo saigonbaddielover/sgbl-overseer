@@ -49,10 +49,29 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
   assert the Codex `!`-refuse safety against a real Codex pane. Run it by hand when touching the
   delivery, lock, or reader paths. Reader-perf ceilings are tunable via
   `OVERSEER_STRESS_PERF_LASTREPLY` / `OVERSEER_STRESS_PERF_TURNS`.
+- **`tests/win-contracts.ps1`** — PowerShell assertions over the shipped `win-*.ps1` payloads (AUTH
+  handshake, pipe-constructor fallback, exclusive rollout claiming, no workdir interpolation, no
+  assignment to the read-only `$pid`). Runs on `windows-latest` in CI alongside a
+  `Language.Parser` parse of every payload; run it locally with `pwsh ./tests/win-contracts.ps1`.
 
-CI (`.github/workflows/validate.yml`) runs two jobs on every push and PR: **validate** (JSON manifests,
-plugin/marketplace version agreement, `bash -n` + shellcheck, `tests/run.sh`) and **stress** (installs
-tmux and runs the harness-free subset of `tests/stress.sh`). Only the Codex `!`-refuse check stays manual.
+CI (`.github/workflows/validate.yml`) runs three jobs on every push and PR: **validate** (JSON manifests,
+plugin/marketplace version agreement, `bash -n` + shellcheck, `tests/run.sh`), **powershell** (parses the
+Windows payloads and runs `tests/win-contracts.ps1` on `windows-latest`), and **stress** (installs tmux
+and runs the harness-free subset of `tests/stress.sh`). Only the Codex `!`-refuse check stays manual.
+
+### Windows live verification
+
+Static checks and the Linux jobs cannot see the Windows path — see the verification rule in
+[docs/WINDOWS.md](docs/WINDOWS.md). **If your change touches `windows.sh` or any `win-*.ps1`**, run
+against a real Windows host and tick these in the PR:
+
+- [ ] `winbroker <host> claude` and `winbroker <host>/two codex` — both paint, both appear in `winlist`
+- [ ] a **multi-line** `winchat`, then `winread` — the transcript shows the exact prompt, not a
+      run-together one line
+- [ ] two brokers of the same kind own **different** transcripts
+- [ ] abort a confirmation and prove the composer is left clear
+- [ ] `winsh` with output **taller than the window** returns output + exit code, not a timeout
+- [ ] `winstop` leaves no descendant process and no descriptor behind
 
 ## Contribution flow
 
@@ -88,11 +107,17 @@ Users update with `/plugin marketplace update sgbl` + `/plugin update overseer` 
 
 ## Style
 
-The scripts deliberately carry comments explaining the non-obvious tmux / TUI gotchas — keep that when
-you touch the tricky logic. Target Linux + tmux + jq; keep it POSIX-ish bash.
+The existing comments in `scripts/lib/*.sh` explain non-obvious tmux / TUI gotchas — **preserve them
+verbatim** when you touch the surrounding logic. The project convention is otherwise *no prose
+comments*: write self-documenting code and put new rationale in the commit, the PR, or `docs/`.
+Functional comments (shebangs, `# shellcheck …` directives, license headers) are the exception.
+Target a Linux controller with tmux + jq; keep it POSIX-ish bash. The `win-*.ps1` payloads follow the
+same rule — their rationale lives in [docs/WINDOWS.md](docs/WINDOWS.md).
 
 ## Adding an agent harness
 
-Turn detection and reading are Claude Code–specific today (transcript under `~/.claude/…`,
-`stop_reason`). Supporting another harness (Codex, OpenCode, ...) means teaching the same commands its
-"is it idle / what did it reply" signal. Open an issue to discuss the seam before opening a PR.
+**Claude Code and Codex are both supported today.** Turn detection lives behind one seam in
+`transcript.sh`: per-harness `_turn_count` / `_is_busy` / `_last_reply` / `_last_prompt`, dispatched by
+`kind` through the `_h_*` wrappers. Supporting a third harness (OpenCode, …) means implementing those
+four functions for it and adding its pane detection to `discovery.sh` — the whole command surface,
+Linux and Windows alike, then works unchanged. Open an issue to discuss the seam before opening a PR.

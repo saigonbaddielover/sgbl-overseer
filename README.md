@@ -3,8 +3,9 @@
 [![validate](https://github.com/saigonbaddielover/sgbl-overseer/actions/workflows/validate.yml/badge.svg)](https://github.com/saigonbaddielover/sgbl-overseer/actions/workflows/validate.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**One agent that oversees others.** Drive and read other agent sessions — and plain shells — running
-in **tmux panes**, turn-based, from outside them. Packaged as a
+**One agent that oversees others.** Drive and read other agent sessions — and plain shells —
+turn-based, from outside them: in **Linux tmux panes** (local or over ssh) and in **native Windows
+console windows** on a remote machine's visible desktop. Packaged as a
 [Claude Code plugin](https://code.claude.com/docs/en/plugins).
 
 The overseer opens (or attaches) a tmux pane, launches an agent harness in its shell, then reads and
@@ -24,13 +25,21 @@ server-side.
 > runs a command in the user's shell the instant it's called. Treat every send as running a command on
 > a machine you don't fully control. The skill's own rules say: never send unless explicitly asked.
 
+## Support model
+
+| | |
+|---|---|
+| **Controller** (where overseer runs) | **Linux** only — pane discovery reads `/proc`. Needs `tmux`, `jq`, `bash ≥ 4.1`, plus `ssh`/`scp` for any remote target. |
+| **Targets** | **Linux tmux panes**, local or on another Linux host over ssh (`deploy` + `on`); **remote native Windows consoles** over plain ssh (the `win*` commands, via a PowerShell broker on the visible desktop — no tmux and no WSL there). |
+| **Not supported** | A macOS controller (specced in [docs/PORTING.md](docs/PORTING.md), unbuilt); local pane discovery anywhere but Linux + tmux; a plain non-tmux Linux terminal as a target. |
+
 ## Requirements
 
-- **Linux** — agent discovery reads `/proc` (macOS/Windows not supported yet; the `/proc` access sits
-  behind a small OS seam and a macOS `ps`/`lsof` backend is fully specced in
-  [docs/PORTING.md](docs/PORTING.md), unbuilt).
-- **tmux** — the target must run inside tmux (a plain PTY can't be driven; the kernel blocks keystroke
-  injection and the screen buffer lives client-side).
+- **Linux** controller — agent discovery reads `/proc` (a macOS `ps`/`lsof` backend sits behind a
+  small OS seam and is fully specced in [docs/PORTING.md](docs/PORTING.md), unbuilt).
+- **tmux** — a Linux target must run inside tmux (a plain PTY can't be driven; the kernel blocks
+  keystroke injection and the screen buffer lives client-side). Windows targets use the broker
+  instead — see [docs/WINDOWS.md](docs/WINDOWS.md) for its prerequisites and security model.
 - **jq** — for transcript reading.
 - **bash ≥ 4.1** — the script uses named file descriptors and associative arrays; stock macOS bash 3.2
   is too old (install a newer bash and run overseer under it).
@@ -88,7 +97,7 @@ All work goes through one script; the agent calls it as
 | `winkeys <host>[/name] <key\|text>...` | **Remote (SSH), Windows target.** Inject named keys (`Enter`, `Escape`, `Up`, `Down`, `Tab`, `Backspace`, `C-c`, …) or literal text into the broker child. Text lands as one keystroke burst; submit with a separate `Enter` (a TUI treats a burst-embedded newline as a paste, not a submit). |
 | `winsh <host>[/name] <command> [timeout]` | **Remote (SSH), Windows target.** Run one command line in the broker's **pwsh** child, wait for it via a unique sentinel, print output + exit code. The Windows peer of `sh` (needs `winbroker <host> pwsh`); refuses a broker hosting an agent, so a command can never be typed into a chat box. |
 | `winread <host>[/name]` | **Remote (SSH), Windows target.** Print the last user prompt + last assistant reply from the broker's **claude/codex** child, read from its on-disk transcript with the *same* `transcript.sh` readers (fetched back over ssh). The Windows peer of `read` — prefer it over `winpeek`, which is a noisy TUI screenshot. |
-| `winchat [--yes] [--force] <host>[/name] <prompt\|-> [timeout]` | **Remote (SSH), Windows target.** Send a prompt to the broker's **claude/codex** child, submit it, then wait for the turn by reading the agent's on-disk transcript with the *same* `transcript.sh` readers overseer uses locally (run on the file fetched back over ssh), and print the reply. The Windows peer of `chat` (needs `winbroker <host> claude\|codex`) and it carries the same guards: refuses a mid-turn agent (`--force` bypasses), refuses a Codex message starting with `!`, prepends a space for Claude's `/ ! # @`, clears the input box, places the prompt with newlines injected as the composer's own newline key and verifies it on screen before submitting (so a multi-line prompt arrives intact instead of submitting at its first line), holds a per-host lock while typing, waits for the keypress unless `--yes`, returns the **question** if the agent stops at a prompt, and fails fast if the agent dies mid-turn. The poll is size-gated — it only refetches the transcript when the broker reports it grew. |
+| `winchat [--yes] [--force] <host>[/name] <prompt\|-> [timeout]` | **Remote (SSH), Windows target.** Send a prompt to the broker's **claude/codex** child, submit it, then wait for the turn by reading the agent's on-disk transcript with the *same* `transcript.sh` readers overseer uses locally (run on the file fetched back over ssh), and print the reply. The Windows peer of `chat` (needs `winbroker <host> claude\|codex`) and it carries the same guards: refuses a mid-turn agent (`--force` bypasses), refuses a Codex message starting with `!`, prepends a space for Claude's `/ ! # @`, clears the input box, places the prompt with newlines injected as the composer's own newline key and verifies it on screen before submitting (so a multi-line prompt arrives intact instead of submitting at its first line), holds a per-host lock while typing, waits for the keypress unless `--yes`, returns the **question** if the agent stops at a prompt, and fails fast if the agent dies mid-turn. The poll is signature-gated — it only refetches the transcript when the broker's reported `mtime:size` changes (the Windows analogue of the local `_file_sig`), so an in-place rewrite is caught too. |
 | `winwait <host>[/name] [timeout]` | **Remote (SSH), Windows target.** Block until the broker's agent finishes its current turn, or return the **question** at once if it is stopped at an interactive prompt. Prints `idle` if it was not busy. The Windows peer of `wait` — use it to resume after a `winchat` timeout instead of re-sending the prompt. |
 | `winstop <host>[/name]` | **Remote (SSH), Windows target.** Stop the broker and its child on the host. |
 
@@ -121,13 +130,27 @@ without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVE
 (default `~/.overseer/scripts/overseer`), `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`.
 
 The `on`/`deploy` model targets **Linux** (it runs overseer, which needs `/proc` + tmux). A **Windows**
-host in the tailnet is reached differently: overseer can't run there, but `winshow <host> [app]` opens a
-GUI on its **visible desktop** over plain ssh —
+host in the tailnet is reached differently: overseer can't run there, so the `win*` commands ssh-execute
+PowerShell payloads that put a driveable console on its **visible desktop**. The lifecycle is
+broker → drive → stop:
 
 ```
-overseer winshow ndman@100.77.19.60           # open Windows Terminal on the screen the user sees
+overseer winbroker win-host claude C:\repo    # start a VISIBLE claude on the user's desktop
+overseer winlist win-host                     # which brokers exist, their child, alive?
+overseer winchat --yes win-host 'run the tests' 900   # prompt it, wait the turn, print the reply
+overseer winread win-host                     # last prompt + last reply, any time
+overseer winwait win-host 900                 # resume waiting after a timeout instead of re-sending
+overseer winstop win-host                     # stop the broker and its child
+
+overseer winbroker win-host pwsh              # …or a shell instead of an agent
+overseer winsh win-host 'git pull'            # run one line in it, wait, print output + exit code
+
+overseer winshow ndman@100.77.19.60           # one-shot cousin: just open a GUI app and return
 overseer winshow win-host 'Notepad'           # any Start-menu name, an AUMID, or a full exe path
 ```
+
+Prerequisites, the pipe trust boundary and the security notes for all of this are in
+[docs/WINDOWS.md](docs/WINDOWS.md).
 
 An ssh session on Windows lands in the non-interactive **Session 0**, so a naively launched GUI is
 invisible. `winshow` bridges to the logged-in **console session** with a throwaway interactive scheduled
@@ -189,7 +212,8 @@ simply polls (~2s slower), never blocked.
 
 ## Caveats
 
-- **Linux only** (`/proc`).
+- **The controller is Linux only** (`/proc`), and so is direct pane discovery. Remote Windows consoles
+  are drivable as *targets* (`win*`), but overseer never runs on Windows.
 - **Depends on each agent's internal on-disk layout** — Claude (`~/.claude/sessions/*.json`,
   `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
   may change between releases. If a release breaks discovery, open an issue.
@@ -258,11 +282,13 @@ bash tests/run.sh
 ```
 
 Releasing is automatic: bump the version in **both** manifests, land the PR, and the `autotag` workflow
-tags `overseer--v<version>` on `main` and publishes the GitHub Release. CI fails a version bump that
-arrives without a matching `CHANGELOG.md` heading.
+tags `overseer--v<version>` on `main` and publishes the GitHub Release. On a **pull request** CI fails a
+version bump that arrives without a matching `CHANGELOG.md` heading (the check compares against the base
+branch, so it only runs there).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch → PR → merge flow (`main` is protected). Design
-notes: [why overseer stays one bash program](docs/DECISIONS.md) · [porting beyond Linux](docs/PORTING.md).
+notes: [why overseer stays one bash program](docs/DECISIONS.md) · [driving a remote Windows
+console](docs/WINDOWS.md) · [porting beyond Linux](docs/PORTING.md).
 
 ### Useful Claude Code commands
 
