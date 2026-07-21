@@ -120,6 +120,20 @@ lacks "unverified delivery never submits"     "$(calls)" 'key '
 ( _mock; MOCK_SNAP='> something else entirely'; cmd_winchat --yes host 'hello' ) >/dev/null 2>&1
 eq    "unverified delivery clears the box"    "yes" "$(cleared_after_paste)"
 
+printf -- '-- an unreachable broker is reported, never silent\n'
+
+_dead() { _mock; _win_client() { printf '%s %s\n' "$1" "${2:-}" >> "$MOCK_LOG"; printf 'ERR connect failed\n'; return 3; }; }
+for c in "cmd_winsh host/x 'echo hi' 5" "cmd_winchat --yes host/x hi" "cmd_winwait host/x 5" "cmd_winread host/x" "cmd_winkeys host/x Enter"; do
+  out=$( _dead; eval "$c" 2>&1 )
+  has "${c%% *} reports an unreachable broker" "$out" 'did not answer'
+  has "${c%% *} names the broker and host"     "$out" "on host"
+done
+
+out=$( _mock; MOCK_KIND=shell; cmd_winsh host/x 'Get-Date' 5 2>&1 )
+sh_payload=$(awk '/^sh -B64 /{print $3}' "$TMP/calls" | head -1 | base64 -d 2>/dev/null)
+has "winsh resets LASTEXITCODE before the command" "$sh_payload" 'global:LASTEXITCODE = $null'
+has "winsh still runs the command after the reset" "$sh_payload" '$null; Get-Date;'
+
 out=$( _mock; MOCK_SNAP=$'Do you want to proceed?\n> 1. Yes\n  2. No'; cmd_winchat --yes host 'hello' 2>&1 )
 has   "a blocking menu is named, not a generic failure" "$out" 'not sent'
 has   "the blocking question itself is shown"           "$out" '1. Yes'

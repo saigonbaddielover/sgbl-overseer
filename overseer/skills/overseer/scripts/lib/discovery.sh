@@ -27,7 +27,7 @@ _descendants() {
 # scan all descendants. echoes the rollout path (the transcript), returns 1 if the pane runs no codex.
 _codex_rollout() {
   local pane_pid="$1" pid tgt
-  for pid in $(_descendants "$pane_pid"); do
+  for pid in "$pane_pid" $(_descendants "$pane_pid"); do
     while IFS= read -r tgt; do
       case "$tgt" in */.codex/sessions/*rollout-*.jsonl) printf '%s' "$tgt"; return 0 ;; esac
     done < <(_p_fds "$pid")
@@ -36,7 +36,7 @@ _codex_rollout() {
 }
 _codex_pid() {
   local pane_pid="$1" p
-  for p in $(_descendants "$pane_pid"); do
+  for p in "$pane_pid" $(_descendants "$pane_pid"); do
     [ "$(_p_comm "$p")" = codex ] && { printf '%s' "$p"; return 0; }
   done
   return 1
@@ -51,6 +51,13 @@ _is_shell() {
   case "$1" in
     sh|bash|zsh|fish|dash|ksh|mksh|ash|tcsh|csh|nu|xonsh|elvish) return 0 ;;
     -sh|-bash|-zsh|-fish|-dash|-ksh|-mksh|-ash|-tcsh|-csh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+_is_posix_shell() {
+  case "$1" in
+    sh|bash|zsh|dash|ksh|mksh|ash) return 0 ;;
+    -sh|-bash|-zsh|-dash|-ksh|-mksh|-ash) return 0 ;;
     *) return 1 ;;
   esac
 }
