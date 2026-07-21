@@ -137,8 +137,13 @@ is not evidence, because a mangled prompt can still *look* plausible in the grid
 
 - On a Windows console, **Claude Code draws the selection cursor as ASCII `>`**, not `❯`. A screen
   parser keyed only on `❯`/`›` silently never matches, so an interactive prompt is invisible and the
-  caller hangs to timeout. `_awaiting_text` accepts all three; `tests/fixtures/awaiting-windows-console.txt`
-  is a real capture guarding this.
+  caller hangs to timeout. `_awaiting_text` therefore takes the accepted glyph set as an argument:
+  `_win_awaiting` passes `❯›>`, and the Linux `_awaiting` keeps the strict `❯›`. Sharing one loose set
+  was a bug — on Linux a reply containing a markdown blockquote of a numbered list (`> 1. …`) read as a
+  menu and ended the wait early. Both paths additionally require that **not every** numbered line
+  carries the glyph, since a real menu marks only the selected row.
+  `tests/fixtures/awaiting-windows-console.txt` is a real capture guarding the positive case;
+  `awaiting-none-markdown-quote.txt` and `awaiting-none-numbered-list.txt` guard the negatives.
 - `Split-Path -Leaf` returns **empty** for `\\.\pipe\<name>` — PowerShell treats it as a UNC root.
 - `[System.Diagnostics.Process]::Start($psi)` can return a *String* in this context, and the child's
   "first descendant" may be `conhost`, not the agent. `Start-Process -PassThru` gives the exact pid.

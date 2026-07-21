@@ -105,7 +105,9 @@ EOF
   `send <t> "<text>"` types free-text; then `wait <t>` / `read <t>`. Each answer may reveal the next
   prompt (e.g. a plan approval → then a per-edit permission) — `wait` will surface each one.
 - `chat`/`wait` **ran to timeout although the agent was clearly waiting** → the detector only fires on a
-  cursor (`❯`/`›`) sitting on **two or more numbered** options. A single-option prompt, a bare y/n with
+  cursor (`❯`/`›`) sitting on **one of two or more numbered** options — if *every* numbered line carries
+  the glyph it is a markdown blockquote, not a menu, and is rejected. (The ASCII `>` cursor counts only
+  on the Windows broker path, where Claude draws it that way.) A single-option prompt, a bare y/n with
   no numbering, or a searchable/type-to-filter picker is deliberately not matched (matching them would
   false-positive on ordinary prose). `peek <t>` to see what it is asking and answer with `keys`.
 

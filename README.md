@@ -218,9 +218,13 @@ simply polls (~2s slower), never blocked.
   `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
   may change between releases. If a release breaks discovery, open an issue.
 - The target program must run **inside tmux**.
-- **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on **two or more** numbered
-  options, which is how Claude and Codex render permission/approval and most select prompts. Two shapes are
-  therefore not auto-detected. A prompt with a *single* numbered option, or a bare y/n prompt with no
+- **Awaiting-input detection covers numbered menus** — a cursor (`❯`/`›`) on **one** of **two or more**
+  numbered options, which is how Claude and Codex render permission/approval and most select prompts.
+  The cursor must sit on exactly *some* of the options, not all: a real menu marks only the selected
+  row, so a block where every numbered line is prefixed (a markdown blockquote of a list) is rejected
+  as prose. The ASCII `>` cursor is accepted **only** on the Windows broker path, where Claude Code
+  draws it that way; on Linux `>` is always prose. Two shapes are therefore not auto-detected. A prompt
+  with a *single* numbered option, or a bare y/n prompt with no
   numbering at all, falls below the two-option floor that keeps the detector off ordinary prose. And a
   *searchable* picker that drops the numbers (e.g. a type-to-filter list, or Codex's `@`-mention list) is
   **intentionally** excluded: those are input-box UI you open by typing (`@`, a slash command), not a state a
