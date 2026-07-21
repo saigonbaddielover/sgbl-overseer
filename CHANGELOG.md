@@ -5,6 +5,39 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-21
+
+### Fixed
+- **A single-line `winchat` could never verify its prompt against Claude Code on a Windows console.**
+  Claude renders the composer gutter as `>` followed by **U+00A0 NO-BREAK SPACE**, which POSIX
+  `[[:space:]]` does not match, so the captured text kept a leading NBSP, the equality check against
+  the sent message always failed, and `winchat` aborted with "could not place/verify the prompt" after
+  clearing the box. A *multi-line* prompt was unaffected because it verifies through the paste chip
+  instead — which is why the bug survived every earlier live test. `_win_snap` now normalizes U+00A0 to
+  a plain space as it reads the grid, so delivery verification, the awaiting-prompt detector and
+  `winpeek` all see the same text a human does. Found and fixed live; the reply now round-trips.
+- **`winstop` can now clean up after a broker that already died.** Stopping went through the pipe, so a
+  broker whose console had closed (its child exited) left its descriptor behind: `winstop` reported
+  `ERR connect failed`, `winlist` showed `state=offline` forever, and only a manual delete cleared it.
+  `quit` now removes the descriptor whether or not the pipe answers, and says which happened.
+- **`winstop` exits non-zero when the broker refuses or is missing**, instead of swallowing the `ERR`
+  line and reporting success.
+
+### Added
+- **`OVERSEER_WIN_CLAUDE` / `OVERSEER_WIN_CODEX`** (defaults `claude` / `codex`) name the command
+  `winbroker` launches on a Windows host. The agent's command name is host-specific — a machine whose
+  users go through a wrapper (`claudeep`) previously got a broker running the wrong binary, which
+  starts, paints, and answers every prompt with `Not logged in`. The value must be a bare command name,
+  travels base64-encoded, and is decoded into a parameter rather than interpolated, like `workdir`. The
+  broker's `kind` stays `claude`/`codex`, so transcript reading and turn detection are untouched.
+- **`tests/win-flow.sh`** — 37 assertions that mock the two remote chokepoints (`_win_client`,
+  `_win_fetch`) and run the real `win*` bash orchestration against a recorded call log: the scp-failure
+  and mid-turn guards fail closed and never submit, `--force` bypasses each, a `pwsh`/dead-child/Codex-`!`
+  target is refused before anything is pasted, a failed submit or unverified delivery clears the box
+  after pasting, `mtime:size` gating refetches on an mtime-only change but not on an unchanged
+  signature, a child that exits mid-turn fails fast with rc=3, and broker-target parsing rejects
+  traversal. Runs in CI with no ssh and no host.
+
 ## [0.12.1] - 2026-07-21
 
 ### Fixed

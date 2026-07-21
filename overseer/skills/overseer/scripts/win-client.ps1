@@ -76,8 +76,19 @@ function Invoke-List {
 }
 function Invoke-Client {
   if ($Op -eq 'list') { Invoke-List; return }
+  if ($Op -eq 'quit') {
+    $configPath = Get-ConfigPath $Broker
+    if (-not (Test-Path -LiteralPath $configPath)) { throw "broker '$Broker' not found" }
+    try {
+      $connection = Connect-Broker (Get-Config $Broker)
+      try { Request $connection 'QUIT' } finally { Close-Broker $connection }
+    } catch {
+      "OK quit (broker was already gone: $($_.Exception.Message))"
+    }
+    Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
+    return
+  }
   $config = Get-Config $Broker
-  $configPath = Get-ConfigPath $Broker
   $connection = Connect-Broker $config
   try {
     switch ($Op) {
@@ -88,11 +99,6 @@ function Invoke-Client {
       'paste' { Request $connection "PASTE $B64" }
       'key' { Request $connection "KEY $Name" }
       'clear' { Request $connection 'CLEAR' }
-      'quit' {
-        $reply = Request $connection 'QUIT'
-        $reply
-        Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
-      }
       'sh' {
         $null = Request $connection "TYPE $B64"
         $deadline = (Get-Date).AddSeconds($TimeoutSec)

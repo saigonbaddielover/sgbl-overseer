@@ -50,16 +50,21 @@ jobs:
                    overseer/skills/overseer/scripts/lib/*.sh \
                    overseer/hooks/turn-done.sh \
                    tests/run.sh \
+                   tests/win-flow.sh \
                    tests/stress.sh; do
             bash -n "$f"
           done
           shellcheck -x -S warning overseer/skills/overseer/scripts/overseer
           shellcheck -S warning overseer/hooks/turn-done.sh
           shellcheck -S warning tests/run.sh
+          shellcheck -S warning tests/win-flow.sh
           shellcheck -S warning tests/stress.sh
 
       - name: parser fixture tests
         run: bash tests/run.sh
+
+      - name: windows flow tests
+        run: bash tests/win-flow.sh
 
   powershell:
     runs-on: windows-latest
