@@ -6,7 +6,7 @@
 
 ### Context
 
-overseer is one bash program (`scripts/overseer` + four sourced `lib/*.sh`) that
+overseer is one bash program (`scripts/overseer` + the sourced `lib/*.sh`) that
 drives and reads another live agent in a tmux pane. During the optimization audit the question was
 raised directly: is bash the right implementation, or should this be rewritten in Rust / Go / Python?
 
@@ -57,8 +57,12 @@ Keep the single bash program. The cost/benefit does not favor a rewrite:
 
 ### Revisit this decision if
 
-- **Windows support** is wanted (no POSIX shell, no `/proc`, no tmux) — that is a different tool, and a
-  rewrite would be the honest path.
+- ~~**Windows support** is wanted (no POSIX shell, no `/proc`, no tmux) — that is a different tool, and a
+  rewrite would be the honest path.~~ **This trigger fired in v0.8.0 and did not require a rewrite.**
+  Windows is driven as a *remote* target over plain SSH: a PowerShell broker runs on the Windows console
+  and speaks a line protocol, while every decision (turn detection, awaiting detection, delivery
+  guards) stays in the same bash + jq seam. See [WINDOWS.md](WINDOWS.md). The lesson generalises —
+  a non-POSIX target needs a small native agent, not a new language for overseer itself.
 - The tool grows **persistent state or a real API** (a daemon, concurrent multi-pane scheduling, a
   network protocol) — orchestration logic heavy enough that a typed language's error handling and data
   structures start to earn their keep.
@@ -67,3 +71,48 @@ Keep the single bash program. The cost/benefit does not favor a rewrite:
   calls plus one `jq` pass).
 
 Until one of those holds, the simplest thing that fully works is the single bash program.
+
+## ADR-0002 — Ship as a Claude Code **Skill + hooks** inside a plugin; not an MCP server, not a subagent
+
+**Status:** Accepted (2026-07-21).
+
+### Context
+
+overseer is packaged as a single-skill plugin: `SKILL.md` (procedure + command table), the bash program
+under `skills/overseer/scripts/`, and three session hooks. The question raised: is a skill the right
+Claude Code extension surface, or should this be "upgraded" to an MCP server or a dedicated subagent?
+
+The product here is not only the executable — the script runs fine from a terminal with no Claude at
+all. The product is the **procedure knowledge**: which commands mutate state, that a running Codex turn
+is interrupted with `Escape` and never `Ctrl-C`, that `menu` needs `Down` for a vertical popup, that
+`winsh` aimed at an agent broker would type the command into a chat box. That knowledge has to reach
+the model at the moment it drives a pane, and nowhere else.
+
+### Options considered
+
+1. **Skill + hooks (chosen).** `SKILL.md` is read only when the task is relevant, so the ~25-command
+   surface costs nothing on unrelated turns. The hooks are pure accelerators — three per-session mtime
+   markers; a session without them falls back to polling, so nothing breaks when they are absent.
+2. **MCP server.** Tool schemas are context-resident on *every* request, so 25 commands would be paid
+   for continuously whether or not any pane is being driven. It also implies a long-lived server, while
+   every overseer command is one-shot and stateless — state lives in tmux, `/proc` and the transcripts,
+   which is precisely why the tool needs no store of its own. Rejected.
+3. **Dedicated subagent.** A subagent is an isolated context, not a capability: it would still shell out
+   to this same script, while paying a fresh context each spawn. Worth revisiting only if `fleet` across
+   many hosts floods the main context — as a thin layer *over* the skill, never a replacement for it.
+4. **Slash commands.** Complementary, not an alternative: cheap to add for muscle memory, but they
+   deliver no procedure knowledge to the model.
+
+### Consequences
+
+- `SKILL.md` is loaded whole on activation, so its size is a running cost (~32 KB today). When it grows
+  past comfortable, split the per-harness quirk tables into a reference file the skill points at, rather
+  than letting the entry document sprawl.
+- Distribution rides the plugin marketplace: version bumps must stay in lockstep across
+  `plugin.json` and `marketplace.json`, which CI enforces.
+
+### Revisit this decision if
+
+- Another tool (not Claude Code) needs to call overseer programmatically — an MCP surface would then buy
+  interoperability the skill cannot.
+- The tool grows genuinely long-lived state that must outlive a single command.

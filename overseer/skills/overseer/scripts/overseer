@@ -27,6 +27,8 @@ _dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$_dir/lib/tui.sh"
 # shellcheck source=lib/commands.sh
 . "$_dir/lib/commands.sh"
+# shellcheck source=lib/windows.sh
+. "$_dir/lib/windows.sh"
 
 main() {
   local cmd="${1:-}"; shift || true
