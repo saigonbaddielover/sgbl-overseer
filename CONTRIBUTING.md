@@ -35,6 +35,8 @@ bash -n overseer/skills/overseer/scripts/overseer overseer/skills/overseer/scrip
 shellcheck -x -S warning overseer/skills/overseer/scripts/overseer   # -x follows the sourced lib/*.sh
 shellcheck -S warning overseer/hooks/turn-done.sh
 bash tests/run.sh                                  # parser fixture tests (no tmux needed)
+bash tests/win-flow.sh                             # win* orchestration, mocked ssh
+bash tests/win-payloads.sh                         # what CI's windows job runs (needs pwsh; optional locally)
 overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + throwaway-pane round trip
 ```
 
@@ -53,10 +55,23 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
   real `win*` bash orchestration against a recorded call log: the mid-turn and scp-failure guards, the
   `pwsh`/dead-child/Codex-`!` refusals, box cleanup after a failed submit or unverified delivery, the
   `mtime:size` gating, and broker-target parsing. No ssh, no host, runs in CI.
-- **`tests/win-contracts.ps1`** — PowerShell assertions over the shipped `win-*.ps1` payloads (AUTH
-  handshake, pipe-constructor fallback, exclusive rollout claiming, no workdir interpolation, no
-  assignment to the read-only `$pid`). Runs on `windows-latest` in CI alongside a
-  `Language.Parser` parse of every payload; run it locally with `pwsh ./tests/win-contracts.ps1`.
+- **`tests/win-payloads.sh`** — parses every shipped `win-*.ps1` with
+  `System.Management.Automation.Language.Parser` and then runs **`tests/win-contracts.ps1`**, whose
+  assertions cover the AUTH handshake, the pipe-constructor fallback, exclusive rollout claiming, the
+  agent-command override, descriptor cleanup on `quit`, no workdir interpolation, and no assignment to
+  the read-only `$pid`. **CI is the authority**: the `windows-latest` job runs `tests/win-parse.ps1`
+  and `tests/win-contracts.ps1` natively under `pwsh`. `win-payloads.sh` just runs those same two
+  scripts for you locally — it is a convenience, not the gate.
+
+  **PowerShell runs on Linux**, so run it before pushing rather than waiting for CI — it has caught
+  defects (an unterminated string, a `$line:` scope parse) that every other check passed:
+
+  ```
+  bash tests/win-payloads.sh                       # pwsh on PATH
+  OVERSEER_PWSH=/path/to/pwsh bash tests/win-payloads.sh   # or point it at one
+  ```
+
+  Exit 1 means a payload failed, 2 means no PowerShell was found.
 
 CI (`.github/workflows/validate.yml`) runs three jobs on every push and PR: **validate** (JSON manifests,
 plugin/marketplace version agreement, `bash -n` + shellcheck, `tests/run.sh`), **powershell** (parses the

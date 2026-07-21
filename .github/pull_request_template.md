@@ -10,6 +10,6 @@
 - [ ] Updated `CHANGELOG.md` (under `Unreleased`)
 - [ ] `bash tests/run.sh` passes
 - [ ] `overseer doctor` still passes on a Linux + tmux box
-- [ ] **If `windows.sh` or any `win-*.ps1` changed:** ran `pwsh ./tests/win-contracts.ps1` **and** the
+- [ ] **If `windows.sh` or any `win-*.ps1` changed:** ran `bash tests/win-payloads.sh` **and** the
       live Windows checklist in [CONTRIBUTING.md](../CONTRIBUTING.md#windows-live-verification) — CI
       cannot see that path

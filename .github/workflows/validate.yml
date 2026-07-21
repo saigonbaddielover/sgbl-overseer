@@ -51,6 +51,7 @@ jobs:
                    overseer/hooks/turn-done.sh \
                    tests/run.sh \
                    tests/win-flow.sh \
+                   tests/win-payloads.sh \
                    tests/stress.sh; do
             bash -n "$f"
           done
@@ -58,6 +59,7 @@ jobs:
           shellcheck -S warning overseer/hooks/turn-done.sh
           shellcheck -S warning tests/run.sh
           shellcheck -S warning tests/win-flow.sh
+          shellcheck -S warning tests/win-payloads.sh
           shellcheck -S warning tests/stress.sh
 
       - name: parser fixture tests
@@ -73,19 +75,7 @@ jobs:
 
       - name: Windows payloads parse
         shell: pwsh
-        run: |
-          $bad = 0
-          Get-ChildItem overseer/skills/overseer/scripts/win-*.ps1 | ForEach-Object {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors) {
-              $bad = 1
-              Write-Host "::error file=$($_.Name)::$($errors | ForEach-Object { $_.Message })"
-            } else {
-              Write-Host "ok: $($_.Name)"
-            }
-          }
-          exit $bad
+        run: ./tests/win-parse.ps1
 
       - name: Windows payload contracts
         shell: pwsh

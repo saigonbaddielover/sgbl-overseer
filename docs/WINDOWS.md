@@ -195,11 +195,17 @@ rights neither broker can record its claim and both attach to the same rollout.
 
 ## Verification rule
 
-CI covers the Windows payloads two ways: a `windows-latest` job parses every `win-*.ps1` with
+`tests/win-parse.ps1` parses every `win-*.ps1` with
 `System.Management.Automation.Language.Parser` (it caught two real defects on its first run that every
-prior check had passed), and `tests/win-contracts.ps1` asserts the invariants above — the AUTH
-handshake, the pipe constructor fallback, exclusive rollout claiming, no workdir interpolation, no
-assignment to `$pid`.
+prior check had passed). `tests/win-contracts.ps1` asserts the invariants above —
+the AUTH handshake, the pipe constructor fallback, exclusive rollout claiming, the agent-command
+override, descriptor cleanup on `quit`, no workdir interpolation, no assignment to `$pid`. CI runs
+those two scripts natively under `pwsh` on `windows-latest` — that job is the gate. But **PowerShell
+runs on Linux too**, so you can run the same checks before pushing:
+`bash tests/win-payloads.sh` (or `OVERSEER_PWSH=/path/to/pwsh …`), which is a thin wrapper over the
+identical scripts.
+
+`tests/win-flow.sh` covers the bash side with the two remote chokepoints mocked.
 
 That is still not enough. Anything touching delivery, key encoding, or transcript resolution must also
 be verified by driving a real Windows host **and reading back what the agent recorded** with `winread`,

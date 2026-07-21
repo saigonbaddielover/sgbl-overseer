@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`tests/win-parse.ps1`** — the payload parse check, lifted out of the workflow's inline script so
+  CI and a local run execute the same file. It is also stricter than the inline version it replaces:
+  it resolves paths from `$PSScriptRoot` instead of the working directory, and it **fails when the
+  glob matches nothing** (the inline loop would have reported success if the payloads were ever moved
+  or renamed).
+- **`tests/win-payloads.sh`** — runs `win-parse.ps1` and `win-contracts.ps1` locally in one command.
+  PowerShell runs on Linux, so the Windows payloads are checkable **before** pushing rather than only
+  by the `windows-latest` job; `OVERSEER_PWSH` points it at a non-`PATH` install. Exit 1 = a payload
+  failed, 2 = no PowerShell found. It is a convenience only — the `windows-latest` job remains the
+  gate, and still runs both `.ps1` files natively under `pwsh`. Verified it fails (rc=1) on a
+  deliberately broken payload; the last two red CI runs were PowerShell-only defects it catches.
+
 ## [0.13.0] - 2026-07-21
 
 ### Fixed
