@@ -105,9 +105,10 @@ the model at the moment it drives a pane, and nowhere else.
 
 ### Consequences
 
-- `SKILL.md` is loaded whole on activation, so its size is a running cost (~32 KB today). When it grows
-  past comfortable, split the per-harness quirk tables into a reference file the skill points at, rather
-  than letting the entry document sprawl.
+- `SKILL.md` is loaded whole on activation, so its size is a running cost — tens of KB, and it has only
+  grown (check with `wc -c` rather than trusting a number written here). When it grows past comfortable,
+  split the per-harness quirk tables into a reference file the skill points at, rather than letting the
+  entry document sprawl.
 - Distribution rides the plugin marketplace: version bumps must stay in lockstep across
   `plugin.json` and `marketplace.json`, which CI enforces.
 

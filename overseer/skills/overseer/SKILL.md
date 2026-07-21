@@ -153,8 +153,10 @@ overseer on sandbox sh %3 'git pull'          # or drive a remote shell pane
 - Pass `--yes` for a remote `chat`/`send`: without a tty the interactive confirm can't prompt, so it
   fails closed (never submits) instead.
 - Preconditions to actually drive a remote agent: that host has tmux, a running claude/codex, and your
-  ssh key — exactly what `overseer on <host> doctor` verifies. Overrides: `OVERSEER_REMOTE_BIN` (remote
-  overseer path, default `~/.overseer/scripts/overseer`), `OVERSEER_SSH` / `OVERSEER_SSH_OPTS`.
+  ssh key — exactly what `overseer on <host> doctor` verifies. Overrides: `OVERSEER_REMOTE_DIR` (where
+  `deploy` writes, default `.overseer` under the remote `$HOME`) and `OVERSEER_REMOTE_BIN` (what `on`
+  runs, default `~/.overseer/scripts/overseer`) — set one and you must set the other to match — plus
+  `OVERSEER_SSH` / `OVERSEER_SSH_OPTS`, and `OVERSEER_SCP` for the Windows transcript fetch.
 - The `on`/`deploy` path is **Linux-only** (overseer itself needs `/proc` + tmux, so it can't run on a
   Windows host). A **Windows** machine in the tailnet is a first-class target through the `win*`
   commands instead: overseer runs locally and only ssh-executes PowerShell payloads there. The full
@@ -334,9 +336,10 @@ installed just polls — the same safe fallback, ~2s slower, never blocked.
   `jq` is needed by every transcript reader — `read`, `chat`, `wait`, and `fleet status|read|wait`.
 - Run from **outside** the target session's tmux client (this is normal — you drive it from a
   separate shell).
-- Optional environment overrides, all validated at startup: `OVERSEER_TIMEOUT` (default `600`, the
-  fallback `[timeout]` for `chat`/`wait`/`sh`), `OVERSEER_POLL_INTERVAL` (default `0.25`, the poll
-  cadence), and `CLAUDE_HOME` / `CODEX_HOME` (defaults `~/.claude`, `~/.codex`) to point at non-default
+- Optional environment overrides. `OVERSEER_TIMEOUT` (default `600`, the
+  fallback `[timeout]` for `chat`/`wait`/`sh`) and `OVERSEER_POLL_INTERVAL` (default `0.25`, the poll
+  cadence) are **validated at startup**, so a bad value fails loudly rather than misbehaving later;
+  the rest are taken as given. `CLAUDE_HOME` / `CODEX_HOME` (defaults `~/.claude`, `~/.codex`) point at non-default
   state directories.
 
 ## Install

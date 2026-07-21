@@ -36,7 +36,7 @@ shellcheck -x -S warning overseer/skills/overseer/scripts/overseer   # -x follow
 shellcheck -S warning overseer/hooks/turn-done.sh
 bash tests/run.sh                                  # parser fixture tests (no tmux needed)
 bash tests/win-flow.sh                             # win* orchestration, mocked ssh
-bash tests/win-payloads.sh                         # what CI's windows job runs (needs pwsh; optional locally)
+bash tests/win-payloads.sh                         # the same two .ps1 files CI's windows job runs (needs pwsh)
 overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + throwaway-pane round trip
 ```
 
@@ -73,10 +73,15 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
 
   Exit 1 means a payload failed, 2 means no PowerShell was found.
 
-CI (`.github/workflows/validate.yml`) runs three jobs on every push and PR: **validate** (JSON manifests,
-plugin/marketplace version agreement, `bash -n` + shellcheck, `tests/run.sh`), **powershell** (parses the
-Windows payloads and runs `tests/win-contracts.ps1` on `windows-latest`), and **stress** (installs tmux
-and runs the harness-free subset of `tests/stress.sh`). Only the Codex `!`-refuse check stays manual.
+CI (`.github/workflows/validate.yml`) runs three jobs on every push and PR:
+
+| job | runner | steps |
+|---|---|---|
+| **validate** | ubuntu | `jq empty` on the three JSON manifests · plugin/marketplace version agreement · a CHANGELOG entry for a version bump (PRs only) · `bash -n` + shellcheck over the entry, `lib/*.sh`, the hook and every `tests/*.sh` · `tests/run.sh` · `tests/win-flow.sh` |
+| **powershell** | windows | `tests/win-parse.ps1` · `tests/win-contracts.ps1`, both natively under `pwsh` |
+| **stress** | ubuntu | installs tmux, runs the harness-free subset of `tests/stress.sh` |
+
+Only the Codex `!`-refuse check in `tests/stress.sh` and the Windows live checklist below stay manual.
 
 ### Windows live verification
 
