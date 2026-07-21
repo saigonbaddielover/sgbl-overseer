@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-07-21
+
+### Fixed
+- **A message that can't be delivered because the agent is blocked on a question now says so.**
+  `chat`/`send` (and `winchat`) failed with `could not place/verify message in input box` whenever the
+  target had no usable composer — but the most common reason for that is an agent sitting on its own
+  startup prompt (Codex's *"Do you trust the contents of this directory?"*, a permission menu), where
+  there is no input box to paste into *yet*. The message named the symptom and hid the cause, so the
+  obvious next step — answer the question, then resend — was the one thing the error didn't suggest.
+  overseer could already read that question: `_awaiting` detects it, and `wait`/`fleet status` report
+  it. The delivery path just never asked. It now does, and reports the pending question plus the
+  `keys`/`send` follow-ups, falling back to the original wording when the pane genuinely isn't
+  awaiting anything. Delivery still fails (nonzero exit, nothing submitted) — only the diagnosis
+  changed.
+
 ## [0.13.1] - 2026-07-21
 
 ### Documentation

@@ -120,6 +120,11 @@ lacks "unverified delivery never submits"     "$(calls)" 'key '
 ( _mock; MOCK_SNAP='> something else entirely'; cmd_winchat --yes host 'hello' ) >/dev/null 2>&1
 eq    "unverified delivery clears the box"    "yes" "$(cleared_after_paste)"
 
+out=$( _mock; MOCK_SNAP=$'Do you want to proceed?\n> 1. Yes\n  2. No'; cmd_winchat --yes host 'hello' 2>&1 )
+has   "a blocking menu is named, not a generic failure" "$out" 'not sent'
+has   "the blocking question itself is shown"           "$out" '1. Yes'
+lacks "a blocking menu never submits"                   "$(calls)" 'key '
+
 printf -- '-- transcript signature gating\n'
 
 _mock; _stat_only; MOCK_MTIME=101; MOCK_SIZE=200

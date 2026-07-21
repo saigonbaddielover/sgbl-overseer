@@ -87,6 +87,12 @@ _win_report_awaiting() {
   printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option; add "overseer winkeys %s Enter" if it needs confirming)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)\n  overseer winread %s\n' \
     "$2" "$1" "$1" "$1" "$1"
 }
+_win_undelivered() {
+  local target="$1" q
+  q=$(_win_awaiting) || { printf "could not place/verify the prompt in the agent's input box on %s — peek: overseer winpeek %s" "$target" "$target"; return 0; }
+  printf 'not sent — the agent on %s is asking:\n%s\n\nanswer it first, then resend, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)' \
+    "$target" "$q" "$target" "$target"
+}
 _win_clear_box() { _win_client clear >/dev/null 2>&1 || return 1; }
 _win_deliver() {
   local target="$1" kind="$2" msg="$3" b64 want nl i snap chip got
@@ -309,7 +315,7 @@ cmd_winchat() {
   fi
   if ! _win_deliver "$target" "$_WKIND" "$prompt"; then
     _unlock_pane; rm -f "$tmp"
-    _die "could not place/verify the prompt in the agent's input box on $target — peek: overseer winpeek $target"
+    _die "$(_win_undelivered "$target")"
   fi
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$prompt"

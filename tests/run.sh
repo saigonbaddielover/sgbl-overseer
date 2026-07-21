@@ -58,6 +58,20 @@ eq "plain numbered list not awaiting" "1"              "$(_awaiting_text "$(cat 
 eq "plain numbered list not awaiting on windows" "1"   "$(_awaiting_text "$(cat "$FIX/awaiting-none-numbered-list.txt")" '❯›>' >/dev/null 2>&1; echo $?)"
 eq "all options marked is not a menu" "1"              "$(_awaiting_text "$(printf '> 1. yes\n> 2. no\n')" '❯›>' >/dev/null 2>&1; echo $?)"
 
+_undeliv() { ( _awaiting() { [ "$1" = menu ] && { printf 'proceed?\n❯ 1. yes\n  2. no'; return 0; }; return 1; }
+              _win_awaiting() { _awaiting menu; }
+              "$@" ) }
+eq "undelivered names the question when a menu is up" "yes" \
+   "$(case "$(_undeliv _undelivered menu %9)" in *'not sent'*'❯ 1. yes'*) echo yes ;; *) echo no ;; esac)"
+eq "undelivered suggests answering it first"          "yes" \
+   "$(case "$(_undeliv _undelivered menu %9)" in *'overseer keys %9 <n>'*) echo yes ;; *) echo no ;; esac)"
+eq "undelivered keeps the plain error with no menu"   "could not place/verify message in input box" \
+   "$(_undeliv _undelivered plain %9)"
+eq "win undelivered names the question when a menu is up" "yes" \
+   "$(case "$(_undeliv _win_undelivered win/two)" in *'not sent'*'win/two'*'❯ 1. yes'*) echo yes ;; *) echo no ;; esac)"
+eq "win undelivered keeps the plain error with no menu"   "yes" \
+   "$(_win_awaiting() { return 1; }; case "$(_win_undelivered win/two)" in *'could not place/verify the prompt'*'winpeek win/two'*) echo yes ;; *) echo no ;; esac)"
+
 eq "is_shell bash"         "0"                         "$(_is_shell bash; echo $?)"
 eq "is_shell login -zsh"   "0"                         "$(_is_shell -zsh; echo $?)"
 eq "is_shell fish"         "0"                         "$(_is_shell fish; echo $?)"
