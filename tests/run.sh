@@ -120,6 +120,15 @@ _hasre() { grep -qE "$2" "$1" && echo yes || echo no; }
 eq "README states the Linux controller / Windows target support model" "yes" "$(_hasre "$README" '^## Support model')"
 eq "SKILL frontmatter names the Windows broker commands" "yes" "$(sed -n '2p' "$SKILL" | grep -qE 'winbroker.*winchat|winchat.*winbroker' && echo yes || echo no)"
 eq "SKILL scope section covers both target kinds" "yes" "$(_hasre "$SKILL" '^## Scope: what runs where')"
+for v in OVERSEER_REMOTE_DIR OVERSEER_REMOTE_BIN OVERSEER_SSH OVERSEER_SSH_OPTS OVERSEER_SCP OVERSEER_WIN_CLAUDE OVERSEER_WIN_CODEX OVERSEER_TIMEOUT OVERSEER_POLL_INTERVAL; do
+  eq "README documents $v" "yes" "$(_has "$README" "$v")"
+done
+
+ENTRYLIB="$HERE/../overseer/skills/overseer/scripts/lib"
+eq "README quotes the real no-agent-pane error" "yes" "$(_has "$README" 'no agent pane (claude/codex) for target')"
+eq "that error string still exists in the code" "yes" "$(_has "$ENTRYLIB/commands.sh" 'no agent pane (claude/codex) for target')"
+eq "README does not claim overseer opens panes" "no" "$(_hasre "$README" 'opens \(or attaches\) a tmux pane|launches an agent harness')"
+
 eq "README describes the Windows poll as mtime:size gated" "yes" "$(_has "$README" 'mtime:size')"
 eq "SKILL describes the Windows poll as mtime:size gated" "yes" "$(_has "$SKILL" 'mtime:size')"
 eq "README links the Windows doc" "yes" "$(_has "$README" 'docs/WINDOWS.md')"

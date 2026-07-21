@@ -8,10 +8,12 @@ turn-based, from outside them: in **Linux tmux panes** (local or over ssh) and i
 console windows** on a remote machine's visible desktop. Packaged as a
 [Claude Code plugin](https://code.claude.com/docs/en/plugins).
 
-The overseer opens (or attaches) a tmux pane, launches an agent harness in its shell, then reads and
-drives that sub-agent turn-based — while also being able to run shell commands directly. Today it
-speaks **Claude Code** and **Codex** (plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect
-which harness a pane runs. It's built so more harnesses can be added behind the same commands.
+On Linux, overseer **attaches to a session someone else already started**: it discovers a tmux pane
+that is already running Claude Code, Codex or a shell, then reads and drives it turn-based — it never
+opens a pane or launches a harness for you. (The one exception is `winbroker`, which *does* start the
+child, because a Windows host has no tmux pane to find.) Today it speaks **Claude Code** and **Codex**
+(plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect which harness a pane runs. It's built
+so more harnesses can be added behind the same commands.
 
 A running agent TUI has no API — its only input channel is the keyboard. `overseer` wraps a
 deterministic, self-verifying `tmux send-keys` / `capture-pane` procedure (plus transcript reading) so
@@ -138,8 +140,10 @@ overseer on sandbox chat --yes %0 'hi'   # drive the remote agent; the reply str
 credentials are ssh's own — no daemon, DB, or token store. overseer adds `ControlMaster`+`ControlPersist`
 so bursts of one-shot commands reuse one connection. A blocking `chat`/`wait`/`sh` polls remote-side and
 ssh just holds the pipe, so no separate event channel is needed. Pass `--yes` for a remote `chat`/`send`:
-without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVERSEER_REMOTE_BIN`
-(default `~/.overseer/scripts/overseer`), `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`.
+without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVERSEER_REMOTE_DIR` (where
+`deploy` writes, default `.overseer` under the remote `$HOME`) and `OVERSEER_REMOTE_BIN` (what `on` then
+executes, default `$HOME/.overseer/scripts/overseer`) — **change one and you must change the other to
+match** — plus `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`, and `OVERSEER_SCP` for the Windows transcript fetch.
 
 The `on`/`deploy` model targets **Linux** (it runs overseer, which needs `/proc` + tmux). A **Windows**
 host in the tailnet is reached differently: overseer can't run there, so the `win*` commands ssh-execute
@@ -266,8 +270,9 @@ Run the preflight first:
 overseer doctor        # or: bash "$CLAUDE_PLUGIN_ROOT/skills/overseer/scripts/overseer" doctor
 ```
 
-- **"no claude pane for target"** → the pane isn't a Claude session, or you targeted the wrong one.
-  `overseer list --all` shows every pane and its command; target a specific pane by its `%N`.
+- **"no agent pane (claude/codex) for target"** → the pane isn't running Claude Code or Codex, or you
+  targeted the wrong one. `overseer list --all` shows every pane and its command; target a specific
+  pane by its `%N`.
 - **`doctor` warns about `~/.claude/sessions/*.json`** → either no Claude session is running, or a
   Claude Code update changed its on-disk layout (which breaks discovery). Open an issue with the
   `doctor` output and your `claude --version`.

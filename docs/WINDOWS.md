@@ -131,6 +131,13 @@ is not evidence, because a mangled prompt can still *look* plausible in the grid
   both Claude Code and Codex. This is the mechanism `PASTE` uses for every newline.
 - **The input box must be cleared first** (`Ctrl+U`, `vk=0x55, uc=0x15, ctrl=0x0008`), or leftover text
   is prepended to the prompt and the agent answers a question nobody asked.
+- **Claude Code draws the composer gutter as `>` followed by U+00A0 NO-BREAK SPACE**, which POSIX
+  `[[:space:]]` does not match. Verifying delivery by comparing the composer row to the sent text
+  therefore never matched until `_win_snap` began normalizing U+00A0 as it reads the grid. Only the
+  single-line path was affected — a multi-line prompt verifies through the paste chip, which is why
+  this survived several rounds of live testing. **Codex is different**: its gutter is `›` (U+203A)
+  followed by an ordinary ASCII space, so it never hit the bug. Confirmed by dumping the raw grid
+  bytes of both (`342 200 272 040` for Codex, `076 302 240` for Claude).
 - Large bursts must be **chunked** (256 records with a short pause between) or records are dropped.
 
 ## Rendering and parsing quirks

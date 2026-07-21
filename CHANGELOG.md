@@ -5,6 +5,35 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-21
+
+### Documentation
+- **Corrected two false claims in `README.md`.** The intro said overseer *"opens (or attaches) a tmux
+  pane, launches an agent harness in its shell"* — it does neither: on Linux it only discovers and
+  drives a pane somebody else already started (the sole `tmux new-session` in the tree is `doctor
+  --live`'s throwaway self-test), and `winbroker` is the one command that starts a child, because a
+  Windows host has no pane to find. The troubleshooting section also quoted an error string,
+  `"no claude pane for target"`, that no longer exists — it became
+  `"no agent pane (claude/codex) for target"` when Codex support landed.
+- **`SKILL.md` no longer claims `CLAUDE_HOME`/`CODEX_HOME` are validated at startup.** Only
+  `OVERSEER_TIMEOUT` and `OVERSEER_POLL_INTERVAL` are; the home paths are plain `${VAR:-default}`
+  substitutions.
+- **`OVERSEER_REMOTE_DIR` is documented** in README and `SKILL.md`, with the constraint that it and
+  `OVERSEER_REMOTE_BIN` must be changed together — `deploy` writes to one and `on` executes the other,
+  so setting just one silently breaks every remote command.
+- **`CONTRIBUTING.md` describes CI job-by-job in a table.** The prose omitted the `windows flow tests`
+  step entirely and said the Windows job runs `tests/win-payloads.sh`, when it runs `win-parse.ps1` and
+  `win-contracts.ps1` natively.
+- **Brittle counts removed rather than corrected** — `tests/win-flow.sh`'s assertion count, an older
+  entry's `win-contracts.ps1` count, and `docs/DECISIONS.md`'s `SKILL.md` size. All three had already
+  rotted, the same way a line count in the 0.10.1 notes did; the numbers carried no information a
+  reader could act on.
+- **GitHub repository metadata refreshed** (About, topics) plus the manifest keywords, which still
+  described a Claude-only, tmux-only tool.
+- **`docs/WINDOWS.md`** records that Claude's console composer gutter is `>` + U+00A0 while Codex's is
+  `›` + a plain space — verified live by dumping the raw grid bytes of both. That difference is why the
+  U+00A0 delivery bug hit Claude only.
+
 ### Added
 - **`tests/win-parse.ps1`** — the payload parse check, lifted out of the workflow's inline script so
   CI and a local run execute the same file. It is also stricter than the inline version it replaces:
@@ -43,7 +72,7 @@ All notable changes to this project are documented here. The format is based on
   starts, paints, and answers every prompt with `Not logged in`. The value must be a bare command name,
   travels base64-encoded, and is decoded into a parameter rather than interpolated, like `workdir`. The
   broker's `kind` stays `claude`/`codex`, so transcript reading and turn detection are untouched.
-- **`tests/win-flow.sh`** — 37 assertions that mock the two remote chokepoints (`_win_client`,
+- **`tests/win-flow.sh`** — mocks the two remote chokepoints (`_win_client`,
   `_win_fetch`) and run the real `win*` bash orchestration against a recorded call log: the scp-failure
   and mid-turn guards fail closed and never submit, `--force` bypasses each, a `pwsh`/dead-child/Codex-`!`
   target is refused before anything is pasted, a failed submit or unverified delivery clears the box
@@ -165,7 +194,7 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 - **Windows payloads are covered in CI.** A `windows-latest` job parses every `win-*.ps1` with the
-  PowerShell parser and runs `tests/win-contracts.ps1` (23 assertions over the auth handshake, pipe ACL,
+  PowerShell parser and runs `tests/win-contracts.ps1` (assertions over the auth handshake, pipe ACL,
   descriptor handling, argument encoding, teardown order and error exits). The parser check immediately
   caught two real defects — a `$line:` scope-qualified variable and a `.Reverse()` on an unrolled array
   — that had shipped past every existing check.
