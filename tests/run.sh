@@ -11,6 +11,9 @@ export CLAUDE_HOME="$HERE/.home" CODEX_HOME="$HERE/.home"
 . "$LIB/tui.sh"
 # shellcheck source=../overseer/skills/overseer/scripts/lib/discovery.sh
 . "$LIB/discovery.sh"
+_die() { printf 'overseer: %s\n' "$1" >&2; exit 1; }
+# shellcheck source=../overseer/skills/overseer/scripts/lib/windows.sh
+. "$LIB/windows.sh"
 
 fail=0
 eq() {
@@ -55,6 +58,27 @@ eq "is_shell fish"         "0"                         "$(_is_shell fish; echo $
 eq "is_shell nu"           "0"                         "$(_is_shell nu; echo $?)"
 eq "is_shell reject node"  "1"                         "$(_is_shell node; echo $?)"
 eq "is_shell reject claude" "1"                        "$(_is_shell claude; echo $?)"
+
+_split() { ( _win_split "$1" >/dev/null 2>&1 && printf '%s %s' "$_WH" "$_WP" ) || printf 'rejected'; }
+eq "win_split bare host"    "win1 overseer-broker"           "$(_split win1)"
+eq "win_split user@ip"      "ndman@10.0.0.9 overseer-broker" "$(_split ndman@10.0.0.9)"
+eq "win_split named broker" "win1 overseer-broker-v10"       "$(_split win1/v10)"
+eq "win_split name w/ -_"   "win1 overseer-broker-a_b-2"     "$(_split win1/a_b-2)"
+eq "win_split reject punct" "rejected"                       "$(_split 'win1/oops!')"
+eq "win_split reject empty" "rejected"                       "$(_split 'win1/')"
+eq "win_split reject nohost" "rejected"                      "$(_split '/v10')"
+
+STAT='kind=claude alive=True size=48213 mtime=1753070000 transcript=C:/Users/u/.claude/projects/D--Workspace/abc-123.jsonl'
+eq "win_field kind"        "claude"                          "$(_win_field "$STAT" kind)"
+eq "win_field alive"       "True"                            "$(_win_field "$STAT" alive)"
+eq "win_field size"        "48213"                           "$(_win_field "$STAT" size)"
+eq "win_field mtime"       "1753070000"                      "$(_win_field "$STAT" mtime)"
+eq "win_field transcript"  "C:/Users/u/.claude/projects/D--Workspace/abc-123.jsonl" "$(_win_field "$STAT" transcript)"
+eq "win_sig gates on both" "1753070000:48213"                "$(_win_sig "$STAT")"
+INFO='kind=shell workdir=D:\Workspace childPid=15272 alive=False transcript='
+eq "win_field absent tx"   ""                                "$(_win_field "$INFO" transcript)"
+eq "win_field alive False" "False"                           "$(_win_field "$INFO" alive)"
+eq "win_sig no transcript" ":"                               "$(_win_sig "$INFO")"
 
 ENTRY="$HERE/../overseer/skills/overseer/scripts/overseer"
 README="$HERE/../README.md"

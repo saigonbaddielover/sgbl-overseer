@@ -5,6 +5,37 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-21
+
+### Added
+- **Windows parsers are now covered by CI.** `tests/run.sh` asserts `_win_split` (bare host, `user@ip`,
+  `<host>/<name>`, and the three rejection cases) and `_win_field`/`_win_sig` against real `STAT`/`INFO`
+  lines. Until now the whole Windows path had zero automated coverage, even though its parsers are
+  exactly the kind that shipped broken in 0.9.0 and passed CI.
+- **`docs/WINDOWS.md`** — the mechanism and its constraints in one place: the Session 0 → Session 1
+  scheduled-task bridge and its battery/time-limit traps, the tmux↔broker primitive mapping, and the
+  console-input facts that no documentation states (a raw `ESC` is never delivered, so bracketed paste
+  is impossible; a `\r`/`\n` with `wVirtualKeyCode = 0` is swallowed; `Ctrl+J` is what inserts a
+  composer newline; the box must be cleared first). The no-prose-comments rule keeps these out of the
+  scripts, and until now they lived only in commit messages.
+- **ADR-0002** records why overseer stays a Claude Code *skill + hooks* rather than becoming an MCP
+  server or a subagent.
+
+### Changed
+- **`lib/windows.sh` split out of `lib/commands.sh`.** `commands.sh` had grown to 686 lines mixing four
+  concerns; it is now 391 lines of local/ssh commands, with the 297-line `win*` surface in its own lib.
+  No behaviour change from the move.
+- **The Windows turn poll gates on `mtime:size`, not size alone**, matching `_file_sig` on Linux. The
+  broker already reported `mtime` over `STAT` and nothing read it; a same-size rewrite of the transcript
+  could previously be missed.
+- **ADR-0001's "revisit if Windows support is wanted" trigger is marked as fired and resolved** — it
+  predicted a rewrite would be the honest path, and 0.8.0 showed a native broker plus the unchanged bash
+  seam was enough. Recording the outcome keeps the decision log from arguing against shipped reality.
+
+### Fixed
+- `winbroker` and `winstop` now take the same per-broker lock as `winkeys`/`winsh`/`winchat`, so
+  restarting or stopping a broker cannot interleave with an in-flight command on that broker.
+
 ## [0.10.0] - 2026-07-21
 
 ### Added

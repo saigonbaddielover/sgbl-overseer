@@ -5,7 +5,10 @@
 - `overseer/` — the plugin: `.claude-plugin/plugin.json`, `skills/overseer/` (the skill + `scripts/`), `hooks/`.
 - `skills/overseer/scripts/overseer` — the entry point (config, `main`, help); it sources `scripts/lib/`:
   `discovery.sh` (pane → harness → transcript path), `transcript.sh` (Claude + Codex readers, turn-done),
-  `tui.sh` (screen read + keyboard/paste delivery), `commands.sh` (the `cmd_*` surface).
+  `tui.sh` (screen read + keyboard/paste delivery), `commands.sh` (the local + ssh `cmd_*` surface),
+  `windows.sh` (the `win*` surface: broker payload transfer, pipe client, remote turn wait).
+- `skills/overseer/scripts/win-*.ps1` — the PowerShell payloads copied to a Windows host on demand;
+  see [docs/WINDOWS.md](docs/WINDOWS.md) for the mechanism and its non-obvious constraints.
 - `.claude-plugin/marketplace.json` — the `sgbl` marketplace that lists the plugin.
 
 ## Test locally (no publish)
