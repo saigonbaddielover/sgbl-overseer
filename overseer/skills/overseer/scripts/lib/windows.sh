@@ -93,6 +93,13 @@ _win_undelivered() {
   printf 'not sent — the agent on %s is asking:\n%s\n\nanswer it first, then resend, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)' \
     "$target" "$q" "$target" "$target"
 }
+_win_rmtmp() { [ -n "${_WTMP:-}" ] && rm -f "$_WTMP"; return 0; }
+_win_call() {
+  local out rc=0
+  out=$(_win_client "$@") || rc=$?
+  [ "$rc" = 0 ] || _die "the broker '${_WP:-overseer-broker}' on $_WH did not answer '$1' (exit $rc): ${out:-no output} — check it is running: overseer winlist $_WH"
+  printf '%s' "$out"
+}
 _win_clear_box() { _win_client clear >/dev/null 2>&1 || return 1; }
 _win_deliver() {
   local target="$1" kind="$2" msg="$3" b64 want nl i snap chip got
@@ -131,7 +138,7 @@ _win_wait_turn() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     _nap; _nap
     i=$((i + 1))
-    st=$(_win_client stat)
+    st=$(_win_call stat)
     [ "$(_win_field "$st" alive)" = False ] && return 3
     tx=$(_win_field "$st" transcript); sig=$(_win_sig "$st")
     if [ -n "$tx" ] && [ "$sig" != "$lastsig" ]; then
@@ -147,7 +154,7 @@ _win_wait_turn() {
 }
 _win_agent_ctx() {
   local target="$1" st
-  st=$(_win_client stat)
+  st=$(_win_call stat)
   _WKIND=$(_win_field "$st" kind)
   _WTX=$(_win_field "$st" transcript)
   _WSIG=$(_win_sig "$st")
@@ -213,10 +220,10 @@ cmd_winkeys() {
   for a in "$@"; do
     case "$a" in
       Enter|Escape|Tab|Backspace|Space|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown|C-[a-zA-Z])
-        out=$(_win_client key "-Name $a") ;;
+        out=$(_win_call key "-Name $a") ;;
       *)
         b64=$(printf '%s' "$a" | base64 | tr -d '\n')
-        out=$(_win_client type "-B64 $b64") ;;
+        out=$(_win_call type "-B64 $b64") ;;
     esac
     printf '%s\n' "$out"
   done
@@ -231,15 +238,15 @@ cmd_winsh() {
   _win_split "$target"
   _lock_pane "win-$target"
   local st kind
-  st=$(_win_client stat); kind=$(_win_field "$st" kind)
+  st=$(_win_call stat); kind=$(_win_field "$st" kind)
   [ "$kind" = shell ] || { _unlock_pane; _die "the broker on $target is hosting '${kind:-?}', not a shell — winsh would type the command into the agent's chat box. Start a shell broker (overseer winbroker $target pwsh), or talk to the agent with: overseer winchat $target '<prompt>'"; }
   [ "$(_win_field "$st" alive)" = False ] && { _unlock_pane; _die "the broker's shell on $target has exited — restart it: overseer winbroker $target pwsh"; }
   local t1 t2 inject b64
   t1="OVSH1$$"; t2="OVSH2$$"
-  inject='Write-Host "'"$t1"'"; '"$cmd"'; $o=$?; $c=$LASTEXITCODE; if ($null -eq $c) { $c = if ($o) { 0 } else { 1 } }; Write-Host "'"$t2"':$c"'
+  inject='Write-Host "'"$t1"'"; $global:LASTEXITCODE = $null; '"$cmd"'; $o=$?; $c=$LASTEXITCODE; if ($null -eq $c) { $c = if ($o) { 0 } else { 1 } }; Write-Host "'"$t2"':$c"'
   b64=$(printf '%s\r' "$inject" | base64 | tr -d '\n')
   local out
-  out=$(_win_client sh "-B64 $b64 -T1 $t1 -T2 $t2 -TimeoutSec $timeout")
+  out=$(_win_client sh "-B64 $b64 -T1 $t1 -T2 $t2 -TimeoutSec $timeout") || true
   _unlock_pane
   if printf '%s\n' "$out" | grep -qaE '^EXIT '; then
     local rc body
@@ -300,7 +307,8 @@ cmd_winchat() {
   _lock_pane "win-$target"
   _win_agent_ctx "$target"
   local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/overseer-wintx.XXXXXX") || { _unlock_pane; _die "mktemp failed"; }
-  _WTMP="$tmp"; trap '[ -n "${_WTMP:-}" ] && rm -f "$_WTMP"' EXIT INT TERM
+  _WTMP="$tmp"; trap '_win_rmtmp' EXIT
+  trap '_win_rmtmp; trap - INT TERM EXIT; kill -INT $$' INT TERM
   local base=0 lastsig=''
   if [ -n "$_WTX" ]; then
     if ! _win_fetch "$_WH" "$_WTX" "$tmp"; then
@@ -342,7 +350,7 @@ cmd_winstop() {
   local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winstop <host>[/name]   (stop the remote WINDOWS broker and its child)"
   _win_split "$target"
   _lock_pane "win-$target"
-  local out; out=$(_win_client quit)
+  local out; out=$(_win_client quit) || true
   _unlock_pane
   printf '%s\n' "$out"
   case "$out" in *ERR\ *) return 1 ;; esac

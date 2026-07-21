@@ -77,7 +77,8 @@ cmd_send() {
   local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since" "$bbytes") || rc=$?
   case "$rc" in
     2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
-    1) printf 'sent to %s:\n%s\n(could not confirm the turn started within 10s — peek: overseer peek %s)\n' "$pane" "$msg" "$target" ;;
+    1) printf 'sent to %s:\n%s\n' "$pane" "$msg"
+       _die "could not confirm the turn started within 10s — the message may still be sitting in the input box; peek: overseer peek $target" ;;
     *) printf 'sent to %s (turn started):\n%s\n' "$pane" "$msg" ;;
   esac
 }
@@ -191,7 +192,7 @@ cmd_sh() {
   local pane cur
   pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
   cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || _die "pane $pane vanished"
-  _is_shell "$cur" || _die "pane $pane is running '$cur', not an idle shell; refusing (try keys/peek, or chat for a claude pane)"
+  _is_posix_shell "$cur" || _die "pane $pane is running '$cur', which overseer sh cannot drive (it needs a POSIX-ish shell: sh, bash, zsh, dash, ksh, mksh, ash); use keys/peek, or chat for an agent pane"
   _lock_pane "$pane"
   local tok; tok="TMC_$$_$(date +%s%N | tail -c 7)"
   local esc; esc=$(printf '%s' "$cmd" | sed "s/'/'\\\\''/g")   # for a single-quoted eval arg
@@ -260,7 +261,7 @@ cmd_slash() {
   case "$slash" in /*) : ;; *) slash="/$slash" ;; esac   # accept 'resume' or '/resume'
   case "$slash" in *$'\n'*) _die "one slash command line only" ;; esac
   local pane pp kind; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
-  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
+  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null) || _die "pane $pane vanished"
   kind=$(_harness_of "$pp") || _die "pane $pane is not a claude/codex agent; slash commands need an agent TUI"
   _lock_pane "$pane"
   _clear_box "$pane" || _die "could not clear the input box"
@@ -303,7 +304,7 @@ _doctor_probe() {
   jl=$(_probe_contract "$kind") && rc=0 || rc=$?
   case "$rc" in
     0) n=$(_h_turn_count "$kind" "$jl"); printf '  [ok]   %s transcript readable (overseer parsed %s completed turns from the newest session)\n' "$kind" "$n" ;;
-    1) printf '  [warn] %s transcript has completed turns but overseer cannot read the reply — its on-disk schema may have changed (see README caveats): %s\n' "$kind" "$jl" ;;
+    1) printf '  [FAIL] %s transcript has completed turns but overseer cannot read the reply — its on-disk schema may have changed (see README caveats): %s\n' "$kind" "$jl"; return 1 ;;
     2) printf '  [ok]   no %s session with a completed turn yet — nothing to probe\n' "$kind" ;;
   esac
 }
@@ -350,7 +351,7 @@ cmd_doctor() {
   else
     printf '  [warn] no %s/sessions/*.json — no claude running, OR Claude Code changed its on-disk layout (would break discovery; see README caveats)\n' "$CLAUDE_HOME"
   fi
-  _doctor_probe claude
+  _doctor_probe claude || bad=1
   if command -v codex >/dev/null 2>&1; then
     cxv=$(codex --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     printf '  [ok]   codex %s\n' "${cxv:-unknown}"
@@ -359,14 +360,14 @@ cmd_doctor() {
   fi
   [ -d "$CODEX_HOME/sessions" ] && printf '  [ok]   Codex session state dir present (%s/sessions)\n' "$CODEX_HOME" \
     || printf '  [warn] no %s/sessions — no codex has run yet, or Codex changed its layout\n' "$CODEX_HOME"
-  _doctor_probe codex
+  _doctor_probe codex || bad=1
   if _awaiting_text "$(printf 'proceed?\n❯ 1. yes\n  2. no\n')" >/dev/null 2>&1; then
     printf '  [ok]   awaiting-prompt detector matches a sample menu (glyph + locale OK)\n'
   else
-    printf '  [warn] awaiting-prompt detector failed on a sample menu — check the UTF-8 locale (grep may not match ❯/›); wait/chat could miss permission prompts\n'
+    printf '  [FAIL] awaiting-prompt detector failed on a sample menu — check the UTF-8 locale (awk may not match ❯/›); wait/chat would miss permission prompts\n'; bad=1
   fi
   [ "$live" = 1 ] && { _doctor_live || bad=1; }
-  [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: missing hard requirements above\n'; return 1; }
+  [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: failed checks above — overseer will not work correctly until they are fixed\n'; return 1; }
 }
 cmd_on() {
   _need ssh

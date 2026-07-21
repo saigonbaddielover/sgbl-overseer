@@ -7,7 +7,8 @@ _lock_pane() {
   mkdir -p "$d" 2>/dev/null || return 0
   f="$d/pane-${pane//[!0-9A-Za-z]/_}.lock"
   { exec {_OVERSEER_LOCK_FD}>"$f"; } 2>/dev/null || { _OVERSEER_LOCK_FD=''; return 0; }
-  flock -w 30 "$_OVERSEER_LOCK_FD" 2>/dev/null || return 0
+  flock -w 30 "$_OVERSEER_LOCK_FD" 2>/dev/null \
+    || { _OVERSEER_LOCK_FD=''; _die "another overseer command has held the lock on $pane for 30s and is still running — retry when it finishes (or check it: overseer peek $pane)"; }
 }
 _unlock_pane() {
   [ -n "$_OVERSEER_LOCK_FD" ] || return 0
@@ -31,12 +32,30 @@ _is_active() {
     | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›] *${ne}"
 }
 _awaiting_text() {
-  local cap="$1" g="${2:-❯›}" total marked
-  total=$(printf '%s\n' "$cap" | grep -cE "^[[:space:]]*[$g]?[[:space:]]*[0-9]+[.)][[:space:]]")
-  marked=$(printf '%s\n' "$cap" | grep -cE "^[[:space:]]*[$g][[:space:]]*[0-9]+[.)][[:space:]]")
-  [ "$marked" -ge 1 ] && [ "$total" -ge 2 ] && [ "$marked" -lt "$total" ] || return 1
-  printf '%s\n' "$cap" | grep -E -B2 "^[[:space:]]*[$g ]*[0-9]+[.)][[:space:]]" \
-    | grep -vE '^--$|^[[:space:]]*$' | tail -10
+  local cap="$1" g="${2:-❯›}" galt='' i out
+  for ((i = 0; i < ${#g}; i++)); do galt="${galt:+$galt|}${g:i:1}"; done
+  out=$(printf '%s\n' "$cap" | awk -v galt="$galt" '
+    { line[NR] = $0
+      s = $0; sub(/^[ \t]+/, "", s)
+      m = (s ~ "^(" galt ")[ \t]*[0-9]+[.)][ \t]")
+      t = s; if (m) sub("^(" galt ")[ \t]*", "", t)
+      if (t ~ /^[0-9]+[.)][ \t]/) { opt[NR] = 1; mark[NR] = m; num[NR] = t + 0 }
+    }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (!opt[i]) continue
+        j = i; n = 0; k = 0
+        while (opt[j] && (j == i || num[j] == num[j - 1] + 1)) { n++; k += mark[j]; j++ }
+        if (n >= 2 && k >= 1 && k < n) {
+          lo = i - 2; if (lo < 1) lo = 1
+          for (p = lo; p < j; p++) if (line[p] ~ /[^ \t]/) print line[p]
+          exit 0
+        }
+        i = j - 1
+      }
+      exit 1
+    }') || return 1
+  printf '%s\n' "$out" | tail -10
 }
 _awaiting() {
   local pane="$1" cap

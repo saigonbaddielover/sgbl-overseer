@@ -5,6 +5,58 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-21
+
+This is the correctness half of a full audit (four independent review passes plus live runs against
+real tmux panes and a real Windows host). Everything here was reproduced before it was fixed, and
+every fix is pinned by a test that was proven to fail against the old code.
+
+### Changed — these alter exit codes and may break scripts
+
+- **`send` now fails when it cannot confirm the turn started.** It printed the "could not confirm"
+  note and exited **0**, so `overseer send … || handle` treated a message still sitting unsent in the
+  input box as success. `chat` already died on the same condition; `send` now matches it.
+- **A lock timeout is fatal.** `_lock_pane` waits 30s for the per-pane `flock`, and on timeout used to
+  `return 0` and carry on **unlocked** — interleaving keystrokes into a pane another invocation was
+  already driving, which is the exact thing the lock exists to prevent. Only a missing or unusable
+  `flock` still degrades to a no-op.
+- **`doctor` fails on a broken contract probe or a broken awaiting detector.** Both were `[warn]`s
+  that still exited 0, so a transcript schema shift or a non-UTF-8 locale — either of which stops
+  `wait`/`chat` from working at all — reported `doctor: OK`. Environment gaps (no `codex` installed,
+  no tmux server yet, no sessions on disk) stay `[warn]` and still exit 0.
+- **`sh` refuses fish, tcsh, csh, nu, xonsh and elvish.** Its wrapper is POSIX-only (`VAR=x cmd …`),
+  so those shells never echoed the sentinel and the command hung for the whole `OVERSEER_TIMEOUT`
+  (default **600s**) before firing `C-c` at the pane. `_is_shell` still accepts them — it is right for
+  its other two callers — and `sh` now gates on the narrower `_is_posix_shell`.
+
+### Fixed
+
+- **`win*` commands no longer die silently when the broker is unreachable.** `winsh`, `winchat`,
+  `winwait`, `winread` and `winkeys` exited **3 with no output at all** against a stopped or missing
+  broker: the remote client's nonzero exit propagated out of `st=$(_win_client stat)` and `set -e`
+  killed the process before any of the carefully worded errors below it could run — including
+  `winsh`'s whole "print the `ERR` line and the screen grid" branch, which was unreachable. Failed
+  broker calls now report the verb, the broker, the host and the client's own output.
+- **The awaiting-prompt detector no longer fires on a reply that contains a numbered line.** Counting
+  marked-vs-total numbered lines anywhere on screen meant any `N.` line in the visible reply, plus a
+  composer holding text that starts with a number, satisfied it — so `chat` announced "the agent is
+  asking" instead of returning the reply. Detection is now a *run* of consecutively-numbered adjacent
+  option lines, at least one marked and not all marked, which is what a menu actually looks like.
+  Verified live on Claude and Codex menus and on a real markdown-list reply.
+- **`winsh` reported a stale exit code.** `$LASTEXITCODE` is session-global in the broker's
+  long-lived pwsh and is only written by *native* commands, so after any failing native command every
+  later cmdlet-only command inherited its code — `winsh host 'Get-Date'` returning `exit=7`. It is
+  reset immediately before the command runs.
+- **`winchat` is interruptible again.** Its `INT`/`TERM` trap cleaned up but never re-raised, so bash
+  resumed the wait loop: with the default 600s timeout only `SIGKILL` stopped it, and the trap had
+  already deleted the temp file the still-running transcript fetch was writing into.
+- **Codex is found when the pane's own process is `codex`.** Discovery scanned descendants only, so a
+  standalone binary or an `exec`'d codex (rather than the npm `node` shim) reported "no agent pane".
+  The Claude path already checked the pane pid itself.
+- **`OVERSEER_POLL_INTERVAL` rejects every spelling of zero.** The hand-enumerated reject list missed
+  `00`, `000`, `0.000` and friends, each of which turned the poll loop into a 100%-CPU spin.
+- **`slash` reports a vanished pane** instead of exiting silently, matching `quit`.
+
 ## [0.13.2] - 2026-07-21
 
 ### Fixed

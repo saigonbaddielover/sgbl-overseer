@@ -14,6 +14,8 @@ export CLAUDE_HOME="$HERE/.home" CODEX_HOME="$HERE/.home"
 _die() { printf 'overseer: %s\n' "$1" >&2; exit 1; }
 # shellcheck source=../overseer/skills/overseer/scripts/lib/windows.sh
 . "$LIB/windows.sh"
+# shellcheck source=../overseer/skills/overseer/scripts/lib/commands.sh
+. "$LIB/commands.sh"
 
 fail=0
 eq() {
@@ -57,6 +59,61 @@ eq "markdown quote not awaiting on windows" "1"        "$(_awaiting_text "$(cat 
 eq "plain numbered list not awaiting" "1"              "$(_awaiting_text "$(cat "$FIX/awaiting-none-numbered-list.txt")" >/dev/null 2>&1; echo $?)"
 eq "plain numbered list not awaiting on windows" "1"   "$(_awaiting_text "$(cat "$FIX/awaiting-none-numbered-list.txt")" '❯›>' >/dev/null 2>&1; echo $?)"
 eq "all options marked is not a menu" "1"              "$(_awaiting_text "$(printf '> 1. yes\n> 2. no\n')" '❯›>' >/dev/null 2>&1; echo $?)"
+
+_aw() { _awaiting_text "$1" "${2:-❯›}" >/dev/null 2>&1 && echo awaiting || echo no; }
+eq "a numbered reply line + a numbered composer is not a menu" "no" \
+   "$(_aw "$(printf 'here are the steps\n2. do the thing\n❯ 1. do X first\n')")"
+eq "options must be consecutively numbered"   "no"       "$(_aw "$(printf '2. b\n❯ 1. a\n')")"
+eq "a real menu under a numbered reply is found" "awaiting" \
+   "$(_aw "$(printf '1. alpha\n2. beta\nProceed?\n❯ 1. Yes\n  2. No\n')")"
+eq "a menu not starting at 1 still counts"    "awaiting" "$(_aw "$(printf 'Proceed?\n❯ 4. Yes\n  5. No\n')")"
+eq "a lone marked option is not a menu"       "no"       "$(_aw "$(printf 'Proceed?\n❯ 1. Yes\n')")"
+
+eq "posix shell accepts bash"   "yes" "$(_is_posix_shell bash && echo yes || echo no)"
+eq "posix shell accepts -zsh"   "yes" "$(_is_posix_shell -zsh && echo yes || echo no)"
+eq "posix shell refuses fish"   "no"  "$(_is_posix_shell fish && echo yes || echo no)"
+eq "posix shell refuses nu"     "no"  "$(_is_posix_shell nu && echo yes || echo no)"
+eq "_is_shell still accepts fish" "yes" "$(_is_shell fish && echo yes || echo no)"
+
+_shpane() {
+  ( _need() { :; }
+    _resolve_pane() { printf '%%9'; }
+    _lock_pane() { printf 'LOCKED-BEFORE-GATE'; }
+    _shell_under_test="$1"
+    tmux() { case "$*" in *pane_current_command*) printf '%s' "$_shell_under_test" ;; *) return 0 ;; esac; }
+    cmd_sh %9 'ls' 1 ) 2>&1
+}
+eq "sh refuses a fish pane before locking"  "yes" "$(case "$(_shpane fish)"  in *"cannot drive"*) echo yes ;; *) echo no ;; esac)"
+eq "sh refuses a nu pane"                   "yes" "$(case "$(_shpane nu)"    in *"cannot drive"*) echo yes ;; *) echo no ;; esac)"
+eq "sh names the shells it can drive"       "yes" "$(case "$(_shpane tcsh)"  in *"sh, bash, zsh, dash, ksh, mksh, ash"*) echo yes ;; *) echo no ;; esac)"
+eq "sh does not refuse a bash pane"         "yes" "$(case "$(_shpane bash)"  in *"cannot drive"*) echo no ;; *) echo yes ;; esac)"
+
+_cxpid() { ( _want="$1"
+             _p_comm() { [ "$1" = "$_want" ] && printf codex || printf node; }
+             _p_children() { [ "$1" = 100 ] && printf '200\n'; }
+             _codex_pid 100 ) }
+eq "codex found when a descendant is codex" "200" "$(_cxpid 200)"
+eq "codex found when the pane pid IS codex" "100" "$(_cxpid 100)"
+
+_probe() { ( _rc="$1"
+             _probe_contract() { printf 'x.jsonl'; return "$_rc"; }
+             _h_turn_count() { printf 3; }
+             _doctor_probe claude >/dev/null; echo "rc=$?" ) }
+eq "doctor probe ok"                 "rc=0" "$(_probe 0)"
+eq "doctor probe schema shift FAILS" "rc=1" "$(_probe 1)"
+eq "doctor probe no-session is ok"   "rc=0" "$(_probe 2)"
+eq "doctor probe schema shift is not a warn" "yes" \
+   "$( ( _probe_contract() { printf 'x.jsonl'; return 1; }; case "$(_doctor_probe claude)" in *'[FAIL]'*) echo yes ;; *) echo no ;; esac ) )"
+
+_delivered() { ( _paste_verified() { printf '%s' "$2"; }; _deliver pane "$1" "$2" ) }
+eq "claude leading slash is space-guarded"  " /clear"  "$(_delivered claude '/clear')"
+eq "claude leading bang is space-guarded"   " !ls"     "$(_delivered claude '!ls')"
+eq "claude leading hash is space-guarded"   " #note"   "$(_delivered claude '#note')"
+eq "claude leading at is space-guarded"     " @file"   "$(_delivered claude '@file')"
+eq "claude plain text is untouched"         "hello"    "$(_delivered claude 'hello')"
+eq "codex plain text is untouched"          "/clear"   "$(_delivered codex '/clear')"
+eq "codex refuses a leading bang"           "refused"  "$( (_delivered codex '!rm -rf /') >/dev/null 2>&1 || echo refused)"
+eq "codex refuses an indented bang"         "refused"  "$( (_delivered codex '   !rm -rf /') >/dev/null 2>&1 || echo refused)"
 
 _undeliv() { ( _awaiting() { [ "$1" = menu ] && { printf 'proceed?\n❯ 1. yes\n  2. no'; return 0; }; return 1; }
               _win_awaiting() { _awaiting menu; }
@@ -166,7 +223,7 @@ for good in 0.25 1 1.0 .5 2.5; do
   eq "poll interval '$good' is accepted" "ok" "$(_poll "$good")"
 done
 eq "poll interval empty falls back to the default" "ok" "$(_poll '')"
-for bad in . 1..2 0 0.0 .0 abc 1x -1; do
+for bad in . 1..2 0 0.0 .0 abc 1x -1 00 000 0. 0.000 0.0000 .00; do
   eq "poll interval '$bad' is rejected" "rejected" "$(_poll "$bad")"
 done
 
