@@ -66,7 +66,7 @@ cmd_send() {
   local bbytes; bbytes=$(_fsize "$path")
   local sid=''; [ "$kind" = claude ] && [ -n "$path" ] && [ -f "$path" ] && sid=$(_sid_from_jsonl "$path")
 
-  _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
+  _deliver "$pane" "$kind" "$msg" || _die "$(_undelivered "$pane" "$target")"
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }
@@ -101,7 +101,7 @@ cmd_chat() {
   if [ "$has_tx" = 1 ]; then
     [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path"); base=$(_h_turn_count "$kind" "$path"); bbytes=$(_fsize "$path")
   fi
-  _deliver "$pane" "$kind" "$msg" || _die "could not place/verify message in input box"
+  _deliver "$pane" "$kind" "$msg" || _die "$(_undelivered "$pane" "$target")"
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
     read -r _ </dev/tty || { _clear_box "$pane"; _die "aborted"; }

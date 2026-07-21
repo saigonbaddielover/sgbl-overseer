@@ -44,6 +44,12 @@ _awaiting() {
   cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
   _awaiting_text "$cap"
 }
+_undelivered() {
+  local pane="$1" target="$2" q
+  q=$(_awaiting "$pane") || { printf 'could not place/verify message in input box'; return 0; }
+  printf 'not sent — the agent is asking:\n%s\n\nanswer it first, then resend, e.g.:\n  overseer keys %s <n>        (choose a numbered option)\n  overseer send %s "<text>"   (type free-text into the prompt)' \
+    "$q" "$target" "$target"
+}
 _report_awaiting() {
   local pane="$1" target="$2"
   printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer keys %s <n>        (choose a numbered option; add "overseer keys %s Enter" if it needs confirming)\n  overseer send %s "<text>"   (type free-text into the prompt)\n  overseer read %s\n' \
