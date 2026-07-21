@@ -5,6 +5,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-21
+
+### Fixed
+- **A markdown blockquote of a numbered list no longer reads as an interactive menu.** v0.10.1 added the
+  ASCII `>` cursor for Claude Code on a Windows console to the *shared* `_awaiting_text` parser, so on
+  **Linux** an ordinary reply containing
+
+  ```
+  > 1. read the file
+  > 2. patch it
+  ```
+
+  matched the awaiting-prompt detector: `chat`/`wait` returned "awaiting input" and stopped waiting for
+  the real turn, and `fleet status` reported the pane as `awaiting`. Two fixes, both covered by
+  fixtures: the accepted glyph set is now a parameter — `_win_awaiting` passes `❯›>`, Linux `_awaiting`
+  keeps the strict `❯›` — and both paths now require that **not every** numbered line carries the
+  glyph, since a real menu marks only the selected row. That second rule also protects the Windows
+  path, where `>` legitimately is a cursor.
+
 ## [0.12.0] - 2026-07-21
 
 ### Fixed

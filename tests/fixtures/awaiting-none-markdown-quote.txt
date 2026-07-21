@@ -1,0 +1,11 @@
+● Here is the plan I would follow:
+
+  > 1. read the failing test and the module it covers
+  > 2. patch the parser so the blockquote case is rejected
+  > 3. add a fixture and re-run tests/run.sh
+
+  Sound reasonable? I will start once you confirm.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯

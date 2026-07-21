@@ -75,7 +75,7 @@ _win_field() {
   esac
 }
 _win_snap() { _win_client snap; }
-_win_awaiting() { _awaiting_text "$(_win_snap)"; }
+_win_awaiting() { _awaiting_text "$(_win_snap)" '❯›>'; }
 _win_report_awaiting() {
   printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option; add "overseer winkeys %s Enter" if it needs confirming)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)\n  overseer winread %s\n' \
     "$2" "$1" "$1" "$1" "$1"

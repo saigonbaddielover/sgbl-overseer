@@ -1,0 +1,11 @@
+● I found three problems:
+
+  1. the parser accepts a markdown blockquote as a menu
+  2. the Windows path shares the Linux glyph set
+  3. there is no fixture covering either
+
+  Want me to fix them?
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
