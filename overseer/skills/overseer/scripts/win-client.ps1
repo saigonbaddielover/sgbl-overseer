@@ -34,11 +34,17 @@ switch ($Op) {
   'info' {
     $w.WriteLine('INFO'); $r.ReadLine()
   }
+  'stat' {
+    $w.WriteLine('STAT'); $r.ReadLine()
+  }
   'snap' {
     $w.WriteLine('SNAP'); (Read-Frame $r) | ForEach-Object { $_ }
   }
   'type' {
     $w.WriteLine("TYPE $B64"); $r.ReadLine()
+  }
+  'paste' {
+    $w.WriteLine("PASTE $B64"); $r.ReadLine()
   }
   'key' {
     $w.WriteLine("KEY $Name"); $r.ReadLine()

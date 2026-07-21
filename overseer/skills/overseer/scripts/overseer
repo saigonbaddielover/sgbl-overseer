@@ -76,7 +76,7 @@ main() {
       printf '  winpeek <host>             snapshot the remote WINDOWS broker screen\n'
       printf '  winkeys <host> <key|text>...  send named keys (Enter Escape Up C-c ...) or literal text to the remote WINDOWS broker child\n'
       printf '  winsh <host> <command> [timeout]  run one command line in the remote WINDOWS broker pwsh child, wait, print output+exit\n'
-      printf '  winchat <host> <prompt> [timeout]  WINDOWS agent broker: send a prompt, wait the turn (transcript), print the reply\n'
+      printf '  winchat [--yes] [--force] <host> <prompt|-> [timeout]  WINDOWS agent broker: send a prompt, wait the turn (transcript), print the reply\n'
       printf '  winstop <host>             stop the remote WINDOWS broker and its child\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;

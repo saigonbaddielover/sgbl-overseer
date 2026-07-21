@@ -6,9 +6,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 switch ($Which) {
-  'pwsh'   { $child = 'pwsh.exe'; $cargs = '-NoProfile -NoLogo'; $kind = 'shell' }
-  'claude' { $g = Get-Command claude -ErrorAction SilentlyContinue | Select-Object -First 1; $child = if ($g) { $g.Source } else { 'claude' }; $cargs = ''; $kind = 'claude' }
-  'codex'  { $child = 'pwsh.exe'; $cargs = '-NoLogo -NoProfile -Command codex'; $kind = 'codex' }
+  'pwsh'   { $child = 'pwsh.exe'; $cargs = '-NoLogo'; $kind = 'shell' }
+  'claude' { $child = 'pwsh.exe'; $cargs = '-NoLogo -Command claude'; $kind = 'claude' }
+  'codex'  { $child = 'pwsh.exe'; $cargs = '-NoLogo -Command codex'; $kind = 'codex' }
   default  { "ERR unknown child '$Which' (use pwsh|claude|codex)"; exit 2 }
 }
 
