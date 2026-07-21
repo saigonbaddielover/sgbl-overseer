@@ -110,6 +110,18 @@ Two environment variables tune the defaults (both validated at startup, so a bad
 non-default state directories: `CLAUDE_HOME` (default `~/.claude`) and `CODEX_HOME` (default `~/.codex`),
 used to find session files, transcripts and the hook markers.
 
+For a Windows target, `OVERSEER_WIN_CLAUDE` (default `claude`) and `OVERSEER_WIN_CODEX` (default
+`codex`) name the command `winbroker` launches on that host — set them when the agent is installed
+under another name there, e.g. a wrapper:
+
+```
+OVERSEER_WIN_CLAUDE=claudeep overseer winbroker win-host claude
+```
+
+The broker's `kind` stays `claude`/`codex`, so turn detection is unaffected. The value must be a bare
+command name (letters, digits, `.`, `_`, `-`); it travels base64-encoded and is never interpolated
+into a command line.
+
 ## Remote (SSH / Tailscale)
 
 To drive a pane on another Linux box — e.g. across a Tailscale tailnet — run the whole overseer program

@@ -65,6 +65,13 @@ _win_split() {
   esac
   [ -n "$_WH" ] || _die "missing host in target '$1' (expected <host> or <host>/<broker-name>)"
 }
+_win_agent_cmd() {
+  case "$1" in
+    claude) printf '%s' "${OVERSEER_WIN_CLAUDE:-claude}" ;;
+    codex)  printf '%s' "${OVERSEER_WIN_CODEX:-codex}" ;;
+    *) printf '' ;;
+  esac
+}
 _win_client() {
   _win_ssh "$_WH" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%ProgramData%\\overseer\\payloads\\overseer-win-client.ps1\" -Op $1 -Broker ${_WP:-overseer-broker} ${2:-}"
 }
@@ -74,7 +81,7 @@ _win_field() {
     *) printf '%s\n' "$1" | grep -oE "(^|[[:space:]])$2=[^[:space:]]+" | head -1 | cut -d= -f2- ;;
   esac
 }
-_win_snap() { _win_client snap; }
+_win_snap() { _win_client snap | sed "s/$(printf '\302\240')/ /g"; }
 _win_awaiting() { _awaiting_text "$(_win_snap)" '❯›>'; }
 _win_report_awaiting() {
   printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option; add "overseer winkeys %s Enter" if it needs confirming)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)\n  overseer winread %s\n' \
@@ -156,9 +163,12 @@ cmd_winbroker() {
     && _win_scp "$_WH" "$d/win-client.ps1" C:/ProgramData/overseer/payloads/overseer-win-client.ps1 \
     && _win_scp "$_WH" "$d/win-launch.ps1" C:/ProgramData/overseer/payloads/overseer-win-launch.ps1 \
     || { _unlock_pane; _die "could not stage payloads on $_WH (check ssh/scp and administrator access)"; }
-  local wdb64 out line snap i ready=0
+  local wdb64 cmd cmdb64 out line snap i ready=0
   wdb64=$(printf '%s' "$wd" | base64 | tr -d '\n'); [ -n "$wdb64" ] || wdb64=fg==
-  if ! out=$(_win_ssh "$_WH" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%ProgramData%\\overseer\\payloads\\overseer-win-launch.ps1\" -Broker $_WP -Which $which -WorkDirB64 $wdb64"); then
+  cmd=$(_win_agent_cmd "$which")
+  case "$cmd" in *[!A-Za-z0-9_.-]*) _die "the agent command for '$which' must be letters, digits, '.', '_' or '-' (got '$cmd')" ;; esac
+  cmdb64=$(printf '%s' "$cmd" | base64 | tr -d '\n'); [ -n "$cmdb64" ] || cmdb64=fg==
+  if ! out=$(_win_ssh "$_WH" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%ProgramData%\\overseer\\payloads\\overseer-win-launch.ps1\" -Broker $_WP -Which $which -WorkDirB64 $wdb64 -CmdB64 $cmdb64"); then
     _unlock_pane
     _die "could not start broker on $_WH: $out"
   fi
@@ -326,6 +336,8 @@ cmd_winstop() {
   local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winstop <host>[/name]   (stop the remote WINDOWS broker and its child)"
   _win_split "$target"
   _lock_pane "win-$target"
-  _win_client quit
+  local out; out=$(_win_client quit)
   _unlock_pane
+  printf '%s\n' "$out"
+  case "$out" in *ERR\ *) return 1 ;; esac
 }

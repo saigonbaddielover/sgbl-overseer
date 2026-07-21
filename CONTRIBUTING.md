@@ -49,6 +49,10 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
   assert the Codex `!`-refuse safety against a real Codex pane. Run it by hand when touching the
   delivery, lock, or reader paths. Reader-perf ceilings are tunable via
   `OVERSEER_STRESS_PERF_LASTREPLY` / `OVERSEER_STRESS_PERF_TURNS`.
+- **`tests/win-flow.sh`** — mocks the two remote chokepoints (`_win_client`, `_win_fetch`) and runs the
+  real `win*` bash orchestration against a recorded call log: the mid-turn and scp-failure guards, the
+  `pwsh`/dead-child/Codex-`!` refusals, box cleanup after a failed submit or unverified delivery, the
+  `mtime:size` gating, and broker-target parsing. No ssh, no host, runs in CI.
 - **`tests/win-contracts.ps1`** — PowerShell assertions over the shipped `win-*.ps1` payloads (AUTH
   handshake, pipe-constructor fallback, exclusive rollout claiming, no workdir interpolation, no
   assignment to the read-only `$pid`). Runs on `windows-latest` in CI alongside a

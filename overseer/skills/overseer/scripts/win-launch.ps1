@@ -1,7 +1,8 @@
 param(
   [string]$Broker = 'overseer-broker',
   [string]$Which = 'pwsh',
-  [string]$WorkDirB64 = ''
+  [string]$WorkDirB64 = '',
+  [string]$CmdB64 = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -44,10 +45,14 @@ if ($Broker -notmatch '^overseer-broker(?:-[0-9A-Za-z_-]+)?$') { "ERR invalid br
 try {
   $workDir = if ($WorkDirB64 -and $WorkDirB64 -ne 'fg==') { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($WorkDirB64)) } else { '' }
 } catch { 'ERR invalid workdir encoding'; exit 2 }
+try {
+  $cmdOverride = if ($CmdB64 -and $CmdB64 -ne 'fg==') { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($CmdB64)) } else { '' }
+} catch { 'ERR invalid command encoding'; exit 2 }
+if ($cmdOverride -and $cmdOverride -notmatch '^[A-Za-z0-9_.-]+$') { "ERR invalid agent command '$cmdOverride' (letters, digits, '.', '_' and '-' only)"; exit 2 }
 switch ($Which) {
   'pwsh'   { $child = 'pwsh.exe'; $cargs = '-NoLogo'; $kind = 'shell' }
-  'claude' { $child = 'pwsh.exe'; $cargs = '-NoLogo -Command claude'; $kind = 'claude' }
-  'codex'  { $child = 'pwsh.exe'; $cargs = '-NoLogo -Command codex'; $kind = 'codex' }
+  'claude' { $exe = if ($cmdOverride) { $cmdOverride } else { 'claude' }; $child = 'pwsh.exe'; $cargs = "-NoLogo -Command $exe"; $kind = 'claude' }
+  'codex'  { $exe = if ($cmdOverride) { $cmdOverride } else { 'codex' }; $child = 'pwsh.exe'; $cargs = "-NoLogo -Command $exe"; $kind = 'codex' }
   default  { "ERR unknown child '$Which' (use pwsh|claude|codex)"; exit 2 }
 }
 

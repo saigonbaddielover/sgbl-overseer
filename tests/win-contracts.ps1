@@ -38,5 +38,12 @@ Check 'broker logs terminating errors' $true ($broker -match 'trap \{ Log "FATAL
 
 Check 'no payload assigns the read-only $pid automatic' $false (($broker + $client + $launch) -match '(foreach|for)\s*\(\s*\$pid\b')
 
+Check 'quit removes the descriptor even when the pipe is dead' $true ($client -match "catch \{\s*\r?\n?\s*\"OK quit \(broker was already gone")
+Check 'quit removes the descriptor unconditionally' $true ($client -match "Remove-Item -LiteralPath \`$configPath[\s\S]{0,40}return")
+
+Check 'launcher takes the agent command as base64 data' $true ($launch -match '\$CmdB64')
+Check 'launcher validates the agent command charset' $true ($launch -match "cmdOverride -notmatch '\^\[A-Za-z0-9_\.-\]\+\`$'")
+Check 'launcher still defaults to claude and codex' $true (($launch -match "else \{ 'claude' \}") -and ($launch -match "else \{ 'codex' \}"))
+
 if ($fail -eq 0) { Write-Host 'PASS: windows payload contracts'; exit 0 }
 Write-Host "FAIL: $fail contract check(s) failed"; exit 1

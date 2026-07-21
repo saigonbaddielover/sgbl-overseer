@@ -166,8 +166,18 @@ is not evidence, because a mangled prompt can still *look* plausible in the grid
 The child is launched through a **profile-loading** `pwsh` (`pwsh -NoLogo -Command claude`), never
 `-NoProfile`. A user's API configuration commonly lives in the PowerShell profile rather than in
 environment variables or any settings file; launching without the profile makes the agent fall back to
-its default auth and reply `Not logged in`. If an agent authenticates in the user's own terminal but
-not under the broker, the profile is the first thing to check.
+its default auth and reply `Not logged in`.
+
+**The command name itself is per-host**, so it is injected, not hardcoded: `OVERSEER_WIN_CLAUDE` and
+`OVERSEER_WIN_CODEX` on the controller (defaults `claude` / `codex`) name what `winbroker` runs there.
+A host whose users go through a wrapper — `claudeep` rather than `claude`, say — needs
+`OVERSEER_WIN_CLAUDE=claudeep`, and gets the same `Not logged in` reply if it does not. The value is
+restricted to a bare command name, travels base64-encoded, and is decoded into a parameter rather than
+interpolated, for the same reason `workdir` is. The broker's `kind` stays `claude`/`codex`, so the
+transcript readers and turn detection are untouched.
+
+So when an agent authenticates in the user's own terminal but not under the broker, check two things:
+the profile, and whether that host uses a differently-named command.
 
 ## Concurrency
 
