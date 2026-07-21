@@ -5,6 +5,53 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-21
+
+### Fixed
+- **`on <host>` no longer requires the remote login shell to be bash.** Argv was serialized with
+  `printf %q`, which emits bash-only `$'…'` for anything with a newline, tab, or quote; a `dash`/`ash`
+  login shell passed that through literally and the remote overseer received mangled arguments. It is
+  now POSIX single-quote quoting, which every POSIX shell parses identically. `stdin` stays free, so
+  `on <host> chat %0 -` still reads the prompt body from the pipe.
+- **`doctor`'s contract probe handles session paths containing spaces.** The scan word-split `ls`
+  output, so a project directory with a space in its name silently probed a nonexistent file and the
+  probe reported a false schema shift.
+- **`OVERSEER_POLL_INTERVAL` rejects values that are not a positive number.** `.`, `1..2`, `0`, and
+  `0.0` all passed validation; the first two made every `sleep` fail and zero spun the poll loop at
+  100% CPU. Covered by fixture tests for both the accepted and the rejected forms.
+- **`_win_cp` honours `OVERSEER_SSH`**, passing it to `scp -S` so a custom ssh binary applies to the
+  transcript fetch as it already did to every other Windows call.
+
+### Changed
+- **Release recovery is no longer manual.** If `autotag` finds the version tag already present it now
+  checks whether the matching GitHub Release exists and publishes it if not, instead of standing down
+  and leaving a tag with no release. `release.yml` (the human-pushed-tag path) first validates that the
+  tag version equals both manifests and has a `## [x.y.z]` CHANGELOG heading, and is idempotent.
+- **The support model is stated consistently everywhere** — README, `SKILL.md` frontmatter and scope
+  section, both manifest descriptions, and the entry-script header: overseer is a **Linux controller**
+  driving **local/remote Linux tmux panes** and **remote native Windows console brokers over SSH**;
+  local pane discovery stays Linux + tmux only. The skill previously advertised itself as tmux-only, so
+  a request to drive a Windows machine could fail to activate it.
+- **The Windows walkthroughs show the whole broker lifecycle** (`winbroker` → `winchat`/`winwait`/
+  `winread` or `winsh` → `winstop`) rather than only `winshow`, and describe the turn poll as gated on
+  the broker's `mtime:size` signature rather than "when it grew".
+
+### Documentation
+- **`docs/WINDOWS.md` is the canonical Windows reference**, now covering the v0.11.0 descriptor/auth
+  design, a prerequisites table, a security model section, `SNAPALL` and the screen-buffer growth, the
+  descriptor-based transcript claiming (and why its ACL must grant `Modify`), and the PowerShell traps
+  found live — read-only `$pid`, `List[int]` unrolling, the missing pipe constructor overload,
+  `GetFinalPathNameByHandle` blocking on pipes. README and `SKILL.md` link to it.
+- **`SECURITY.md` and the skill's safety rules cover the `win*` commands** — remote execution as the
+  console user, visible-desktop side effects, the named-pipe trust boundary, and never relaying a
+  broker descriptor.
+- **CONTRIBUTING is current**: Claude *and* Codex are documented as supported with the real `_h_*`
+  seam described, the Windows parser/contract CI job is listed, the comment policy is stated
+  (preserve existing ones, add none), and a conditional Windows live-verification checklist is added —
+  mirrored in the PR template. The bug template gained a target dropdown and sanitized Windows fields.
+- `tests/run.sh` asserts these doc contracts, so the support-model wording, `mtime:size` wording,
+  Windows links and live-test checklist cannot silently disappear.
+
 ## [0.11.0] - 2026-07-21
 
 ### Security
@@ -82,8 +129,8 @@ All notable changes to this project are documented here. The format is based on
   server or a subagent.
 
 ### Changed
-- **`lib/windows.sh` split out of `lib/commands.sh`.** `commands.sh` had grown to 686 lines mixing four
-  concerns; it is now 391 lines of local/ssh commands, with the 297-line `win*` surface in its own lib.
+- **`lib/windows.sh` split out of `lib/commands.sh`.** `commands.sh` had grown past 650 lines mixing
+  four concerns; it now holds only the local/ssh commands, with the `win*` surface in its own lib.
   No behaviour change from the move.
 - **The Windows turn poll gates on `mtime:size`, not size alone**, matching `_file_sig` on Linux. The
   broker already reported `mtime` over `STAT` and nothing read it; a same-size rewrite of the transcript

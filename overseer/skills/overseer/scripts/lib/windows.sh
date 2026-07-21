@@ -40,10 +40,11 @@ _win_ssh() {
   return "$rc"
 }
 _win_cp() {
-  local i scp_bin="${OVERSEER_SCP:-scp}"
+  local i scp_bin="${OVERSEER_SCP:-scp}" via=''
+  [ -n "${OVERSEER_SSH:-}" ] && via="-S ${OVERSEER_SSH}"
   for i in 1 2 3; do
     # shellcheck disable=SC2086
-    "$scp_bin" -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$1" "$2" >/dev/null 2>&1 && return 0
+    "$scp_bin" $via -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$1" "$2" >/dev/null 2>&1 && return 0
     _nap
   done
   return 1

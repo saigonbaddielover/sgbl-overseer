@@ -1,10 +1,18 @@
 {
   "name": "overseer",
-  "version": "0.11.0",
-  "description": "One agent that oversees others: drive and read other agent sessions (Claude Code, Codex) and shells running in tmux panes, turn-based, from outside. Linux + tmux.",
-  "author": { "name": "saigonbaddielover" },
+  "version": "0.12.0",
+  "description": "One agent that oversees others: drive and read other agent sessions (Claude Code, Codex) and shells, turn-based, from outside — in Linux tmux panes (local or over ssh) and in native Windows consoles on a remote desktop. Linux controller.",
+  "author": {
+    "name": "saigonbaddielover"
+  },
   "homepage": "https://github.com/saigonbaddielover/sgbl-overseer",
   "repository": "https://github.com/saigonbaddielover/sgbl-overseer",
   "license": "MIT",
-  "keywords": ["tmux", "claude-code", "session-control", "agent-coordination", "hooks"]
+  "keywords": [
+    "tmux",
+    "claude-code",
+    "session-control",
+    "agent-coordination",
+    "hooks"
+  ]
 }
