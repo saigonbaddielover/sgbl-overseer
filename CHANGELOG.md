@@ -5,6 +5,67 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-21
+
+### Added
+- **`winchat` now carries the same guards as `chat`.** It previously had none, so driving a Windows
+  agent was materially less safe than driving a Linux one:
+  - **Refuses a Codex prompt starting with `!`** — Codex runs such a message as a *shell command* by
+    its design, so `winchat <host> '!<cmd>'` silently executed on the Windows box. This is the same
+    refusal `_deliver` has always applied on Linux.
+  - **Prepends a space for Claude's `/ ! # @`**, so a prompt leading with one of those arrives as
+    chat instead of opening command/bash/memory/file mode.
+  - **Strips C0 control bytes** from the prompt.
+  - **Refuses a mid-turn agent** (`_h_is_busy` on the fetched transcript); `--force` bypasses.
+  - **`--yes`** — without it, the prompt is placed, verified, and shown for confirmation before it is
+    submitted (matching `chat`/`send`).
+  - **Returns the question** when the agent stops at an interactive permission/menu prompt, instead
+    of hanging to timeout. The broker's `SNAP` is an already-rendered console grid, so the existing
+    `_awaiting_text` screen parser reads it unchanged — no second implementation.
+  - **Fails fast when the agent exits mid-turn** rather than waiting out the timeout.
+  - **Per-host lock** (`_lock_pane`) around delivery in `winchat`/`winkeys`/`winsh`, so two overseer
+    invocations can no longer interleave keystrokes into the same broker.
+- **Multi-line prompts to a Windows agent** (`winchat <host> -` reads stdin). A new broker `PASTE`
+  verb wraps the text in bracketed-paste markers and emits newlines as characters; the old `TYPE`
+  path sent a newline as a real `VK_RETURN`, which submitted a multi-line prompt at its first line.
+  Delivery is verified on screen before Enter, mirroring `_paste_verified`.
+- **`winsh` refuses a broker that is hosting an agent.** It previously typed the command line into
+  whatever child was running — including a Claude/Codex chat box, which then submitted it as a
+  message.
+
+### Fixed
+- **A Windows broker child now runs through the user's PowerShell profile**, so it behaves exactly
+  like the user opening their terminal and typing `claude` / `codex` / `pwsh`. The launcher started
+  `claude.exe` directly and passed `-NoProfile` to the pwsh wrappers, so any environment the user
+  sets in their profile was missing — on the test host that profile dot-sources the file configuring
+  a third-party API, so the broker's Claude fell back to "Not logged in · Please run /login" while
+  the same command in the user's own terminal worked.
+- **An interactive prompt is now detected on a Windows console.** Claude Code draws the selection
+  cursor as an ASCII `>` there rather than `❯`, so `_awaiting_text` never matched a Windows grid and
+  `winchat` would have waited out its whole timeout at a permission/menu prompt. The cursor class now
+  accepts `>` as well, still gated on two or more numbered options. A real Windows-console capture is
+  now a fixture (`awaiting-windows-console.txt`) so this cannot regress.
+- **`winbroker` waits for the child to actually paint** before returning, not merely for the pipe to
+  appear. A `winsh`/`winchat` issued immediately after could otherwise race the child's startup and
+  time out looking for its sentinels.
+- **`scp` is retried like `ssh`.** Payload upload and transcript fetch had no retry, so a single
+  dropped packet on a relayed tailnet link failed the whole command.
+- **`winsh` always reports a numeric exit code.** PowerShell only sets `$LASTEXITCODE` for native
+  commands, so a cmdlet-only line reported an empty exit; it now falls back to the command's success
+  status.
+
+### Changed
+- **`winchat`'s wait no longer copies the whole transcript every poll.** A new broker `STAT` verb
+  reports `alive`/`size`/`mtime`/`transcript`, and the transcript is refetched only when its size
+  changed — the same size-gated poll the Linux reader uses. A long Codex rollout is multiple MB, so
+  the old loop re-copied it over the network every 0.5s.
+- **The broker resolves the transcript of *its own* child**, not the newest file on the machine:
+  Claude via the `sessions/<pid>.json` → `sessionId` chain over the child's descendant pids (the
+  Windows twin of `_agent_pid`/`_sid_of`), Codex by restricting rollouts to those written since the
+  child started. Another agent running on the same Windows box no longer shadows it.
+- Broker input is written in bounded chunks, so a long paste cannot overflow the console input
+  buffer.
+
 ## [0.8.0] - 2026-07-21
 
 ### Added

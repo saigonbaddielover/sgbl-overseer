@@ -47,6 +47,7 @@ eq "codex aborted!=busy"   ""                          "$(_cx_is_busy "$FIX/code
 eq "awaiting claude"       "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-claude.txt")" >/dev/null 2>&1; echo $?)"
 eq "awaiting codex"        "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-codex.txt")" >/dev/null 2>&1; echo $?)"
 eq "awaiting none"         "1"                         "$(_awaiting_text "$(cat "$FIX/awaiting-none.txt")" >/dev/null 2>&1; echo $?)"
+eq "awaiting win console"  "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-windows-console.txt")" >/dev/null 2>&1; echo $?)"
 
 eq "is_shell bash"         "0"                         "$(_is_shell bash; echo $?)"
 eq "is_shell login -zsh"   "0"                         "$(_is_shell -zsh; echo $?)"

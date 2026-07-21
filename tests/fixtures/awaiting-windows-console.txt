@@ -1,0 +1,12 @@
+   Select model
+   Switch between Claude models. Your pick becomes the default for new sessions. For other/previous model names,
+   specify with --model.
+
+     1. Default (recommended)  Use the default model
+   > 2. Opus                   Most capable model
+     3. Sonnet                 Balanced model
+     4. Haiku                  Fastest model
+
+   ● High effort (default) ←/→ to adjust
+
+   Enter to set as default · s to use this session only · Esc to cancel

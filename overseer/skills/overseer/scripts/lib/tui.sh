@@ -32,9 +32,9 @@ _is_active() {
 }
 _awaiting_text() {
   local cap="$1"
-  printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
-  [ "$(printf '%s\n' "$cap" | grep -cE '^[[:space:]]*[❯›]?[[:space:]]*[0-9]+[.)][[:space:]]')" -ge 2 ] || return 1
-  printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯› ]*[0-9]+[.)][[:space:]]' \
+  printf '%s\n' "$cap" | grep -qE '^[[:space:]]*[❯›>][[:space:]]*[0-9]+[.)][[:space:]]' || return 1
+  [ "$(printf '%s\n' "$cap" | grep -cE '^[[:space:]]*[❯›>]?[[:space:]]*[0-9]+[.)][[:space:]]')" -ge 2 ] || return 1
+  printf '%s\n' "$cap" | grep -E -B2 '^[[:space:]]*[❯›> ]*[0-9]+[.)][[:space:]]' \
     | grep -vE '^--$|^[[:space:]]*$' | tail -10
 }
 _awaiting() {
