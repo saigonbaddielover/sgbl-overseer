@@ -1,10 +1,49 @@
 param(
-  [string]$Pipe = 'overseer-broker',
+  [string]$Broker = 'overseer-broker',
   [string]$Which = 'pwsh',
-  [string]$WorkDir = ''
+  [string]$WorkDirB64 = ''
 )
 $ErrorActionPreference = 'Stop'
 
+function Set-SharedAcl($path) {
+  $acl = New-Object System.Security.AccessControl.DirectorySecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($identity in @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $null = $acl.AddAccessRule($rule)
+  }
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule('NT AUTHORITY\Authenticated Users', 'ReadAndExecute', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+  $null = $acl.AddAccessRule($rule)
+  Set-Acl -LiteralPath $path -AclObject $acl
+}
+function Set-ConfigAcl($path, $consoleUser) {
+  $acl = New-Object System.Security.AccessControl.FileSecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($identity in @('BUILTIN\Administrators', 'NT AUTHORITY\SYSTEM')) {
+    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+    $null = $acl.AddAccessRule($rule)
+  }
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($consoleUser, 'Modify', 'Allow')
+  $null = $acl.AddAccessRule($rule)
+  Set-Acl -LiteralPath $path -AclObject $acl
+}
+function Stop-Tree($root, $all) {
+  $tree = New-Object System.Collections.Generic.List[int]
+  $q = New-Object System.Collections.Generic.Queue[int]
+  $q.Enqueue([int]$root)
+  while ($q.Count -gt 0) {
+    $p = $q.Dequeue()
+    $tree.Add($p)
+    foreach ($c in ($all | Where-Object { [int]$_.ParentProcessId -eq $p })) { $q.Enqueue([int]$c.ProcessId) }
+  }
+  $ordered = @($tree)
+  for ($k = $ordered.Count - 1; $k -ge 0; $k--) { Stop-Process -Id $ordered[$k] -Force -ErrorAction SilentlyContinue }
+}
+
+if ($Broker -notmatch '^overseer-broker(?:-[0-9A-Za-z_-]+)?$') { "ERR invalid broker '$Broker'"; exit 2 }
+try {
+  $workDir = if ($WorkDirB64 -and $WorkDirB64 -ne 'fg==') { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($WorkDirB64)) } else { '' }
+} catch { 'ERR invalid workdir encoding'; exit 2 }
 switch ($Which) {
   'pwsh'   { $child = 'pwsh.exe'; $cargs = '-NoLogo'; $kind = 'shell' }
   'claude' { $child = 'pwsh.exe'; $cargs = '-NoLogo -Command claude'; $kind = 'claude' }
@@ -12,32 +51,47 @@ switch ($Which) {
   default  { "ERR unknown child '$Which' (use pwsh|claude|codex)"; exit 2 }
 }
 
-$brk = Join-Path $env:USERPROFILE 'overseer-win-broker.ps1'
+$root = Join-Path $env:ProgramData 'overseer'
+$payloadDir = Join-Path $root 'payloads'
+$brokerDir = Join-Path $root 'brokers'
+New-Item -ItemType Directory -Force -Path $root, $payloadDir, $brokerDir | Out-Null
+Set-SharedAcl $root
+Set-SharedAcl $payloadDir
+Set-SharedAcl $brokerDir
+$brk = Join-Path $payloadDir 'overseer-win-broker.ps1'
 if (-not (Test-Path -LiteralPath $brk)) { "ERR broker payload not found at $brk"; exit 2 }
 $cu = (Get-CimInstance Win32_ComputerSystem).UserName
 if (-not $cu) { 'ERR no interactive console user (screen locked or logged off)'; exit 2 }
+$configPath = Join-Path $brokerDir "$Broker.json"
 
 $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
-$pipePat = '-Pipe\s+' + [regex]::Escape($Pipe) + '(\s|$)'
-$stale = @($all | Where-Object { $_.Name -eq 'pwsh.exe' -and $_.CommandLine -match 'overseer-win-broker' -and $_.CommandLine -match $pipePat })
-foreach ($b in $stale) {
-  $tree = New-Object System.Collections.Generic.List[int]
-  $q = New-Object System.Collections.Generic.Queue[int]
-  $q.Enqueue([int]$b.ProcessId)
-  while ($q.Count -gt 0) {
-    $p = $q.Dequeue()
-    $tree.Add($p)
-    foreach ($c in ($all | Where-Object { [int]$_.ParentProcessId -eq $p })) { $q.Enqueue([int]$c.ProcessId) }
-  }
-  $tree.Reverse()
-  foreach ($p in $tree) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
-}
+$configPat = [regex]::Escape($configPath)
+$stale = @($all | Where-Object { $_.Name -eq 'pwsh.exe' -and $_.CommandLine -match 'overseer-win-broker' -and $_.CommandLine -match $configPat })
+foreach ($b in $stale) { Stop-Tree $b.ProcessId $all }
+Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
 
-$argline = "-NoProfile -ExecutionPolicy Bypass -File `"$brk`" -Pipe $Pipe -Child `"$child`" -ChildArgs `"$cargs`" -Kind $kind -WorkDir `"$WorkDir`""
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$pipe = "overseer-$([Guid]::NewGuid().ToString('N'))"
+$config = [ordered]@{
+  Broker = $Broker
+  Pipe = $pipe
+  Token = [Convert]::ToBase64String($bytes)
+  ConsoleUser = $cu
+  Child = $child
+  ChildArgs = $cargs
+  Kind = $kind
+  WorkDir = $workDir
+  CreatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+}
+$config | ConvertTo-Json -Compress | Set-Content -LiteralPath $configPath -Encoding UTF8
+Set-ConfigAcl $configPath $cu
+
+$argline = "-NoProfile -ExecutionPolicy Bypass -File `"$brk`" -Config `"$configPath`""
 $act = New-ScheduledTaskAction -Execute 'pwsh.exe' -Argument $argline
 $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
 $prin = New-ScheduledTaskPrincipal -UserId $cu -LogonType Interactive -RunLevel Limited
-$task = $Pipe
+$task = $Broker
 try {
   Register-ScheduledTask -TaskName $task -Action $act -Settings $set -Principal $prin -Force | Out-Null
   Start-ScheduledTask -TaskName $task
@@ -49,6 +103,6 @@ try {
 $ok = $false
 for ($t = 0; $t -lt 40; $t++) {
   Start-Sleep -Milliseconds 500
-  try { if ([System.IO.Directory]::GetFileSystemEntries('\\.\pipe\') -match ('\\' + $Pipe + '$')) { $ok = $true; break } } catch {}
+  try { if ([System.IO.Directory]::GetFileSystemEntries('\\.\pipe\') -match ('\\' + [regex]::Escape($pipe) + '$')) { $ok = $true; break } } catch {}
 }
-if ($ok) { "OK broker ready pipe=$Pipe child=$Which kind=$kind" } else { 'ERR broker pipe not up after 20s' }
+if ($ok) { "OK broker ready broker=$Broker child=$Which kind=$kind" } else { Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue; 'ERR broker pipe not up after 20s'; exit 3 }
