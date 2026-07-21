@@ -17,16 +17,27 @@ if (-not (Test-Path -LiteralPath $brk)) { "ERR broker payload not found at $brk"
 $cu = (Get-CimInstance Win32_ComputerSystem).UserName
 if (-not $cu) { 'ERR no interactive console user (screen locked or logged off)'; exit 2 }
 
-Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object { $_.CommandLine -match 'overseer-win-broker' } | ForEach-Object {
-  Get-CimInstance Win32_Process -Filter ("ParentProcessId=" + $_.ProcessId) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+$all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
+$pipePat = '-Pipe\s+' + [regex]::Escape($Pipe) + '(\s|$)'
+$stale = @($all | Where-Object { $_.Name -eq 'pwsh.exe' -and $_.CommandLine -match 'overseer-win-broker' -and $_.CommandLine -match $pipePat })
+foreach ($b in $stale) {
+  $tree = New-Object System.Collections.Generic.List[int]
+  $q = New-Object System.Collections.Generic.Queue[int]
+  $q.Enqueue([int]$b.ProcessId)
+  while ($q.Count -gt 0) {
+    $p = $q.Dequeue()
+    $tree.Add($p)
+    foreach ($c in ($all | Where-Object { [int]$_.ParentProcessId -eq $p })) { $q.Enqueue([int]$c.ProcessId) }
+  }
+  $tree.Reverse()
+  foreach ($p in $tree) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
 }
 
 $argline = "-NoProfile -ExecutionPolicy Bypass -File `"$brk`" -Pipe $Pipe -Child `"$child`" -ChildArgs `"$cargs`" -Kind $kind -WorkDir `"$WorkDir`""
 $act = New-ScheduledTaskAction -Execute 'pwsh.exe' -Argument $argline
 $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
 $prin = New-ScheduledTaskPrincipal -UserId $cu -LogonType Interactive -RunLevel Limited
-$task = 'overseer-broker'
+$task = $Pipe
 try {
   Register-ScheduledTask -TaskName $task -Action $act -Settings $set -Principal $prin -Force | Out-Null
   Start-ScheduledTask -TaskName $task

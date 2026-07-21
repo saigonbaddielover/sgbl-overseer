@@ -148,10 +148,17 @@ public static class ConIO {
         return Emit(recs);
     }
     public static uint Paste(string s) {
-        string body = "\u001b[200~" + s.Replace("\r\n", "\r").Replace("\n", "\r") + "\u001b[201~";
+        string body = s.Replace("\r\n", "\n").Replace("\r", "\n");
         var recs = new List<INPUT_RECORD>();
+        for (int k = 0; k < 8; k++) {
+            recs.Add(Rec(0x55, (char)0x15, 0x0008, true)); recs.Add(Rec(0x55, (char)0x15, 0x0008, false));
+        }
         foreach (char c in body) {
-            recs.Add(Rec(0, c, 0, true)); recs.Add(Rec(0, c, 0, false));
+            if (c == '\n') {
+                recs.Add(Rec(0x4A, '\n', 0x0008, true)); recs.Add(Rec(0x4A, '\n', 0x0008, false));
+            } else {
+                recs.Add(Rec(0, c, 0, true)); recs.Add(Rec(0, c, 0, false));
+            }
         }
         return Emit(recs);
     }

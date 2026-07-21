@@ -439,8 +439,19 @@ _win_cp() {
 }
 _win_scp() { _win_cp "$2" "$1:$3"; }
 _win_fetch() { _win_cp "$1:$2" "$3"; }
+_win_split() {
+  _WH="${1%%/*}"
+  case "$1" in
+    */*)
+      local n="${1#*/}"
+      case "$n" in ''|*[!0-9A-Za-z_-]*) _die "broker name after '/' must be letters, digits, '-' or '_' (got '$n')" ;; esac
+      _WP="overseer-broker-$n" ;;
+    *) _WP="overseer-broker" ;;
+  esac
+  [ -n "$_WH" ] || _die "missing host in target '$1' (expected <host> or <host>/<broker-name>)"
+}
 _win_client() {
-  _win_ssh "$1" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-client.ps1\" -Op $2 -Pipe overseer-broker ${3:-}"
+  _win_ssh "$_WH" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-client.ps1\" -Op $1 -Pipe ${_WP:-overseer-broker} ${2:-}"
 }
 _win_field() {
   case "$2" in
@@ -448,74 +459,113 @@ _win_field() {
     *) printf '%s\n' "$1" | grep -oE "(^|[[:space:]])$2=[^[:space:]]+" | head -1 | cut -d= -f2- ;;
   esac
 }
-_win_snap() { _win_client "$1" snap; }
-_win_awaiting() { _awaiting_text "$(_win_snap "$1")"; }
+_win_snap() { _win_client snap; }
+_win_awaiting() { _awaiting_text "$(_win_snap)"; }
 _win_report_awaiting() {
-  printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option; add "overseer winkeys %s Enter" if it needs confirming)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)\n  overseer winpeek %s\n' \
+  printf 'awaiting input — the agent is asking:\n%s\n\nanswer it, then read the reply, e.g.:\n  overseer winkeys %s <n>            (choose a numbered option; add "overseer winkeys %s Enter" if it needs confirming)\n  overseer winkeys %s "<text>" Enter (type free-text into the prompt)\n  overseer winread %s\n' \
     "$2" "$1" "$1" "$1" "$1"
 }
 _win_deliver() {
-  local host="$1" kind="$2" msg="$3" b64 probe i snap
+  local target="$1" kind="$2" msg="$3" b64 probe i snap
   msg=$(printf '%s' "$msg" | LC_ALL=C tr -d '\000-\010\013-\037\177')
   if [ "$kind" = claude ]; then
     case "$msg" in /*|'!'*|'#'*|'@'*) msg=" $msg" ;; esac
   else
-    case "$(_trim "$msg")" in '!'*) _die "Codex runs a message starting with '!' as a shell command (by its design), not chat — reword it (e.g. lead with a word), or run a command with: overseer winsh $host '<cmd>'" ;; esac
+    case "$(_trim "$msg")" in '!'*) _die "Codex runs a message starting with '!' as a shell command (by its design), not chat — reword it (e.g. lead with a word), or run a command with: overseer winsh $target '<cmd>'" ;; esac
   fi
   b64=$(printf '%s' "$msg" | base64 | tr -d '\n')
-  _win_client "$host" paste "-B64 $b64" >/dev/null || return 3
+  _win_client paste "-B64 $b64" >/dev/null || return 3
   probe=$(printf '%s' "$(_trim "$msg")" | head -1 | cut -c1-24)
   [ -n "$probe" ] || return 4
   for i in 1 2 3 4; do
-    snap=$(_win_snap "$host")
+    snap=$(_win_snap)
     case "$snap" in *"$probe"*) return 0 ;; esac
     printf '%s\n' "$snap" | grep -qE 'Pasted text #[0-9]+' && return 0
     _nap
   done
   return 4
 }
+_win_wait_turn() {
+  local kind="$1" base="$2" lastsz="$3" timeout="$4" tmp="$5"
+  local deadline=$((SECONDS + timeout)) st tx sz cur i=0
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    _nap; _nap
+    i=$((i + 1))
+    st=$(_win_client stat)
+    [ "$(_win_field "$st" alive)" = False ] && return 3
+    tx=$(_win_field "$st" transcript); sz=$(_win_field "$st" size); sz="${sz:-0}"
+    if [ -n "$tx" ] && [ "$sz" != "$lastsz" ]; then
+      lastsz="$sz"
+      if _win_fetch "$_WH" "$tx" "$tmp"; then
+        cur=$(_h_turn_count "$kind" "$tmp"); cur="${cur:-0}"
+        [ "$cur" -gt "$base" ] && return 0
+      fi
+    fi
+    [ $((i % 8)) = 0 ] && _win_awaiting >/dev/null && return 2
+  done
+  return 1
+}
+_win_agent_ctx() {
+  local target="$1" st
+  st=$(_win_client stat)
+  _WKIND=$(_win_field "$st" kind)
+  _WTX=$(_win_field "$st" transcript)
+  _WSZ=$(_win_field "$st" size); _WSZ="${_WSZ:-0}"
+  case "$_WKIND" in claude|codex) : ;; *) _die "the broker on $target is hosting '${_WKIND:-?}', not an agent — start one with: overseer winbroker $target claude|codex" ;; esac
+  [ "$(_win_field "$st" alive)" = False ] && _die "the broker's agent on $target has exited — restart it: overseer winbroker $target $_WKIND"
+  return 0
+}
 cmd_winbroker() {
   _need ssh; _need scp
-  local host="${1:-}" which="${2:-pwsh}" wd="${3:-}"
-  [ -n "$host" ] || _die "usage: overseer winbroker <host> [pwsh|claude|codex] [workdir]   (start a VISIBLE broker on a remote WINDOWS host's console hosting pwsh/claude/codex; then drive it with winpeek/winkeys/winsh/winchat. Re-run to switch the child. Default child pwsh, default workdir = the host's Windows Terminal default)"
+  local target="${1:-}" which="${2:-pwsh}" wd="${3:-}"
+  [ -n "$target" ] || _die "usage: overseer winbroker <host>[/name] [pwsh|claude|codex] [workdir]   (start a VISIBLE broker on a remote WINDOWS host's console hosting pwsh/claude/codex; then drive it with winpeek/winkeys/winsh/winchat/winread/winwait. Add /name to run several side by side — see: overseer winlist <host>. Re-run to switch the child. Default child pwsh, default workdir = the host's Windows Terminal default)"
+  _win_split "$target"
   case "$which" in pwsh|claude|codex) : ;; *) _die "child must be pwsh, claude, or codex (got '$which')" ;; esac
   local d="$_dir" f
   for f in win-broker.ps1 win-client.ps1 win-launch.ps1; do [ -f "$d/$f" ] || _die "missing payload: $d/$f"; done
-  _win_scp "$host" "$d/win-broker.ps1" overseer-win-broker.ps1 \
-    && _win_scp "$host" "$d/win-client.ps1" overseer-win-client.ps1 \
-    && _win_scp "$host" "$d/win-launch.ps1" overseer-win-launch.ps1 \
-    || _die "could not copy payloads to $host (check ssh/scp to the host)"
+  _win_scp "$_WH" "$d/win-broker.ps1" overseer-win-broker.ps1 \
+    && _win_scp "$_WH" "$d/win-client.ps1" overseer-win-client.ps1 \
+    && _win_scp "$_WH" "$d/win-launch.ps1" overseer-win-launch.ps1 \
+    || _die "could not copy payloads to $_WH (check ssh/scp to the host)"
   local wdq="${wd//\"/}"
-  local out; out=$(_win_ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-launch.ps1\" -Pipe overseer-broker -Which $which -WorkDir \"$wdq\"")
+  local out; out=$(_win_ssh "$_WH" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-launch.ps1\" -Pipe $_WP -Which $which -WorkDir \"$wdq\"")
   local line; line=$(printf '%s\n' "$out" | grep -aE '^(OK|ERR) ' | head -1)
   case "$line" in
     OK\ *)
       local i
       for i in $(seq 1 8); do
-        [ -n "$(_win_snap "$host" | tr -d '[:space:]')" ] && break
+        [ -n "$(_win_snap | tr -d '[:space:]')" ] && break
         _nap
       done ;;
   esac
   printf '%s\n' "${line:-$out}"
 }
+cmd_winlist() {
+  _need ssh
+  local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winlist <host>   (list the overseer brokers running on a remote WINDOWS host: name, child kind, workdir, alive)"
+  _win_split "$target"
+  _win_client list
+}
 cmd_winpeek() {
   _need ssh
-  local host="${1:-}"; [ -n "$host" ] || _die "usage: overseer winpeek <host>   (snapshot the remote WINDOWS broker's screen; run 'overseer winbroker <host>' first)"
-  _win_client "$host" snap
+  local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winpeek <host>[/name]   (snapshot the remote WINDOWS broker's screen; run 'overseer winbroker <host>' first)"
+  _win_split "$target"
+  _win_client snap
 }
 cmd_winkeys() {
   _need ssh; _need base64
-  local host="${1:-}"; shift || true
-  [ -n "$host" ] && [ "$#" -gt 0 ] || _die "usage: overseer winkeys <host> <key|text>...   (send named keys — Enter Escape Up Down Tab Backspace C-c ... — or literal text, to the remote WINDOWS broker's child)"
+  local target="${1:-}"; shift || true
+  [ -n "$target" ] && [ "$#" -gt 0 ] || _die "usage: overseer winkeys <host>[/name] <key|text>...   (send named keys — Enter Escape Up Down Tab Backspace C-c ... — or literal text, to the remote WINDOWS broker's child)"
+  _win_split "$target"
   local a b64 out=''
-  _lock_pane "win-$host"
+  _lock_pane "win-$target"
   for a in "$@"; do
     case "$a" in
       Enter|Escape|Tab|Backspace|Space|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown|C-[a-zA-Z])
-        out=$(_win_client "$host" key "-Name $a") ;;
+        out=$(_win_client key "-Name $a") ;;
       *)
         b64=$(printf '%s' "$a" | base64 | tr -d '\n')
-        out=$(_win_client "$host" type "-B64 $b64") ;;
+        out=$(_win_client type "-B64 $b64") ;;
     esac
     printf '%s\n' "$out"
   done
@@ -523,97 +573,114 @@ cmd_winkeys() {
 }
 cmd_winsh() {
   _need ssh; _need base64
-  local host="${1:-}" cmd="${2:-}" timeout="${3:-$DEFAULT_TIMEOUT}"
-  [ -n "$host" ] && [ -n "$cmd" ] || _die "usage: overseer winsh <host> <command> [timeout_s]   (run one command line in the remote WINDOWS broker's pwsh child; start it with 'overseer winbroker <host> pwsh')"
+  local target="${1:-}" cmd="${2:-}" timeout="${3:-$DEFAULT_TIMEOUT}"
+  [ -n "$target" ] && [ -n "$cmd" ] || _die "usage: overseer winsh <host>[/name] <command> [timeout_s]   (run one command line in the remote WINDOWS broker's pwsh child; start it with 'overseer winbroker <host> pwsh')"
   _uint "$timeout"
   case "$cmd" in *$'\n'*) _die "one command line only (chain with ; )" ;; esac
+  _win_split "$target"
   local st kind
-  st=$(_win_client "$host" stat); kind=$(_win_field "$st" kind)
-  [ "$kind" = shell ] || _die "the broker on $host is hosting '${kind:-?}', not a shell — winsh would type the command into the agent's chat box. Start a shell broker (overseer winbroker $host pwsh), or talk to the agent with: overseer winchat $host '<prompt>'"
-  [ "$(_win_field "$st" alive)" = False ] && _die "the broker's shell on $host has exited — restart it: overseer winbroker $host pwsh"
+  st=$(_win_client stat); kind=$(_win_field "$st" kind)
+  [ "$kind" = shell ] || _die "the broker on $target is hosting '${kind:-?}', not a shell — winsh would type the command into the agent's chat box. Start a shell broker (overseer winbroker $target pwsh), or talk to the agent with: overseer winchat $target '<prompt>'"
+  [ "$(_win_field "$st" alive)" = False ] && _die "the broker's shell on $target has exited — restart it: overseer winbroker $target pwsh"
   local t1 t2 inject b64
   t1="OVSH1$$"; t2="OVSH2$$"
   inject='Write-Host "'"$t1"'"; '"$cmd"'; $o=$?; $c=$LASTEXITCODE; if ($null -eq $c) { $c = if ($o) { 0 } else { 1 } }; Write-Host "'"$t2"':$c"'
   b64=$(printf '%s\r' "$inject" | base64 | tr -d '\n')
-  local out; _lock_pane "win-$host"
-  out=$(_win_client "$host" sh "-B64 $b64 -T1 $t1 -T2 $t2 -TimeoutSec $timeout")
+  local out; _lock_pane "win-$target"
+  out=$(_win_client sh "-B64 $b64 -T1 $t1 -T2 $t2 -TimeoutSec $timeout")
   _unlock_pane
   if printf '%s\n' "$out" | grep -qaE '^EXIT '; then
     local rc body
     rc=$(printf '%s\n' "$out" | grep -aE '^EXIT ' | head -1 | awk '{print $2}')
     body=$(printf '%s\n' "$out" | awk '/^<<<OUT$/{f=1;next} /^>>>OUT$/{f=0} f{print}')
-    printf '# host=%s exit=%s\n%s\n' "$host" "$rc" "$body"
+    printf '# host=%s exit=%s\n%s\n' "$target" "$rc" "$body"
   else
     printf '%s\n' "$out"
   fi
+}
+cmd_winread() {
+  _need ssh; _need jq; _need scp
+  local target="${1:-}"
+  [ -n "$target" ] || _die "usage: overseer winread <host>[/name]   (print the last user prompt + last assistant reply from the WINDOWS broker's agent, read from its transcript)"
+  _win_split "$target"
+  _win_agent_ctx "$target"
+  [ -n "$_WTX" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
+  local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/overseer-wintx.XXXXXX") || _die "mktemp failed"
+  _win_fetch "$_WH" "$_WTX" "$tmp" || { rm -f "$tmp"; _die "could not fetch the transcript from $_WH"; }
+  printf '# host=%s harness=%s\n## last user prompt:\n%s\n\n## last assistant reply:\n%s\n' \
+    "$target" "$_WKIND" "$(_h_last_prompt "$_WKIND" "$tmp")" "$(_h_last_reply "$_WKIND" "$tmp")"
+  rm -f "$tmp"
+}
+cmd_winwait() {
+  _need ssh; _need jq; _need scp
+  local target="${1:-}" timeout="${2:-$DEFAULT_TIMEOUT}"
+  [ -n "$target" ] || _die "usage: overseer winwait <host>[/name] [timeout_s]   (block until the WINDOWS broker's agent finishes its current turn, or return the question if it stops at an interactive prompt)"
+  _uint "$timeout"
+  _win_split "$target"
+  local q
+  if q=$(_win_awaiting); then _win_report_awaiting "$target" "$q"; return 0; fi
+  _win_agent_ctx "$target"
+  [ -n "$_WTX" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
+  local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/overseer-wintx.XXXXXX") || _die "mktemp failed"
+  _win_fetch "$_WH" "$_WTX" "$tmp" || { rm -f "$tmp"; _die "could not fetch the transcript from $_WH"; }
+  if ! _h_is_busy "$_WKIND" "$tmp"; then rm -f "$tmp"; echo idle; return 0; fi
+  local base rc=0
+  base=$(_h_turn_count "$_WKIND" "$tmp"); base="${base:-0}"
+  _win_wait_turn "$_WKIND" "$base" "$_WSZ" "$timeout" "$tmp" || rc=$?
+  rm -f "$tmp"
+  case "$rc" in
+    0) if q=$(_win_awaiting); then _win_report_awaiting "$target" "$q"; else echo idle; fi ;;
+    2) q=$(_win_awaiting) && _win_report_awaiting "$target" "$q" ;;
+    3) _die "the agent on $target exited mid-turn; peek: overseer winpeek $target" ;;
+    *) _die "timeout after ${timeout}s — the turn is still running on $target" ;;
+  esac
 }
 cmd_winchat() {
   _need ssh; _need jq; _need base64; _need scp
   local confirm=1 force=0
   while :; do case "${1:-}" in --yes) confirm=0; shift ;; --force) force=1; shift ;; *) break ;; esac; done
-  local host="${1:-}" prompt
-  [ -n "$host" ] || _die "usage: overseer winchat [--yes] [--force] <host> <prompt|-> [timeout_s]   (send a prompt to the remote WINDOWS broker's claude/codex, wait for the turn via its transcript, print the reply; start it with 'overseer winbroker <host> claude|codex')"
+  local target="${1:-}" prompt
+  [ -n "$target" ] || _die "usage: overseer winchat [--yes] [--force] <host>[/name] <prompt|-> [timeout_s]   (send a prompt to the remote WINDOWS broker's claude/codex, wait for the turn via its transcript, print the reply; start it with 'overseer winbroker <host> claude|codex')"
   prompt=$(_read_msg "${2:-}")
-  [ -n "$prompt" ] || _die "usage: overseer winchat [--yes] [--force] <host> <prompt|-> [timeout_s]  (empty prompt)"
+  [ -n "$prompt" ] || _die "usage: overseer winchat [--yes] [--force] <host>[/name] <prompt|-> [timeout_s]  (empty prompt)"
   local timeout="${3:-$DEFAULT_TIMEOUT}"; _uint "$timeout"
-  local st kind tx
-  st=$(_win_client "$host" stat)
-  kind=$(_win_field "$st" kind)
-  tx=$(_win_field "$st" transcript)
-  case "$kind" in claude|codex) : ;; *) _die "the broker on $host is hosting '${kind:-?}', not an agent — start one with: overseer winbroker $host claude|codex" ;; esac
-  [ "$(_win_field "$st" alive)" = False ] && _die "the broker's agent on $host has already exited — restart it: overseer winbroker $host $kind"
+  _win_split "$target"
+  _win_agent_ctx "$target"
   local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/overseer-wintx.XXXXXX") || _die "mktemp failed"
   local base=0 lastsz=0
-  if [ -n "$tx" ] && _win_fetch "$host" "$tx" "$tmp"; then
-    base=$(_h_turn_count "$kind" "$tmp"); base="${base:-0}"
-    lastsz=$(_win_field "$st" size); lastsz="${lastsz:-0}"
-    if [ "$force" = 0 ] && _h_is_busy "$kind" "$tmp"; then
+  if [ -n "$_WTX" ] && _win_fetch "$_WH" "$_WTX" "$tmp"; then
+    base=$(_h_turn_count "$_WKIND" "$tmp"); base="${base:-0}"
+    lastsz="$_WSZ"
+    if [ "$force" = 0 ] && _h_is_busy "$_WKIND" "$tmp"; then
       rm -f "$tmp"
-      _die "the agent on $host looks mid-turn; let it finish, or interrupt it: overseer winkeys $host Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
+      _die "the agent on $target looks mid-turn; wait: overseer winwait $target — or interrupt it: overseer winkeys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
     fi
   fi
-  _lock_pane "win-$host"
-  if ! _win_deliver "$host" "$kind" "$prompt"; then
+  _lock_pane "win-$target"
+  if ! _win_deliver "$target" "$_WKIND" "$prompt"; then
     _unlock_pane; rm -f "$tmp"
-    _die "could not place/verify the prompt in the agent's input box on $host — peek: overseer winpeek $host"
+    _die "could not place/verify the prompt in the agent's input box on $target — peek: overseer winpeek $target"
   fi
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$prompt"
     read -r _ </dev/tty || { _unlock_pane; rm -f "$tmp"; _die "aborted"; }
   fi
-  _win_client "$host" key "-Name Enter" >/dev/null
+  _win_client key "-Name Enter" >/dev/null
   _unlock_pane
-  printf '# sent to %s (waiting for the turn...)\n' "$host" >&2
-  local deadline=$((SECONDS + timeout)) cur sz q i=0
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    _nap; _nap
-    i=$((i + 1))
-    st=$(_win_client "$host" stat)
-    if [ "$(_win_field "$st" alive)" = False ]; then
-      rm -f "$tmp"
-      _die "the agent on $host exited mid-turn — no reply was produced; peek: overseer winpeek $host"
-    fi
-    tx=$(_win_field "$st" transcript); sz=$(_win_field "$st" size); sz="${sz:-0}"
-    if [ -n "$tx" ] && [ "$sz" != "$lastsz" ]; then
-      lastsz="$sz"
-      if _win_fetch "$host" "$tx" "$tmp"; then
-        cur=$(_h_turn_count "$kind" "$tmp"); cur="${cur:-0}"
-        if [ "$cur" -gt "$base" ]; then
-          if q=$(_win_awaiting "$host"); then rm -f "$tmp"; _win_report_awaiting "$host" "$q"; return 0; fi
-          printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$tmp")"
-          rm -f "$tmp"; return 0
-        fi
-      fi
-    fi
-    if [ $((i % 8)) = 0 ] && q=$(_win_awaiting "$host"); then
-      rm -f "$tmp"; _win_report_awaiting "$host" "$q"; return 0
-    fi
-  done
-  rm -f "$tmp"
-  _die "timeout after ${timeout}s waiting for the turn on $host (peek: overseer winpeek $host)"
+  printf '# sent to %s (waiting for the turn...)\n' "$target" >&2
+  local rc=0 q
+  _win_wait_turn "$_WKIND" "$base" "$lastsz" "$timeout" "$tmp" || rc=$?
+  case "$rc" in
+    0) if q=$(_win_awaiting); then rm -f "$tmp"; _win_report_awaiting "$target" "$q"; return 0; fi
+       printf '## reply:\n%s\n' "$(_h_last_reply "$_WKIND" "$tmp")"; rm -f "$tmp" ;;
+    2) rm -f "$tmp"; q=$(_win_awaiting) && _win_report_awaiting "$target" "$q" ;;
+    3) rm -f "$tmp"; _die "the agent on $target exited mid-turn — no reply was produced; peek: overseer winpeek $target" ;;
+    *) rm -f "$tmp"; _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun winchat (it would send the prompt again); resume waiting instead: overseer winwait $target   then   overseer winread $target" ;;
+  esac
 }
 cmd_winstop() {
   _need ssh
-  local host="${1:-}"; [ -n "$host" ] || _die "usage: overseer winstop <host>   (stop the remote WINDOWS broker and its child)"
-  _win_client "$host" quit
+  local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winstop <host>[/name]   (stop the remote WINDOWS broker and its child)"
+  _win_split "$target"
+  _win_client quit
 }

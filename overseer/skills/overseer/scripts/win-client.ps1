@@ -25,6 +25,36 @@ function Read-Frame($reader) {
   return $lines
 }
 
+if ($Op -eq 'list') {
+  $names = @()
+  try {
+    $names = [System.IO.Directory]::GetFileSystemEntries('\\.\pipe\') |
+      ForEach-Object { $_.Substring($_.LastIndexOf('\') + 1) } |
+      Where-Object { $_ -like 'overseer-broker*' } | Sort-Object -Unique
+  } catch {}
+  if (-not $names) { 'none'; exit 0 }
+  foreach ($n in $names) {
+    $label = if ($n -eq 'overseer-broker') { '-' } else { $n -replace '^overseer-broker-', '' }
+    $c2 = $null
+    try {
+      $c2 = New-Object System.IO.Pipes.NamedPipeClientStream('.', $n, [System.IO.Pipes.PipeDirection]::InOut)
+      $c2.Connect(2000)
+    } catch { try { $c2.Dispose() } catch {}; $c2 = $null }
+    if ($c2) {
+      $r2 = New-Object System.IO.StreamReader($c2)
+      $w2 = New-Object System.IO.StreamWriter($c2); $w2.AutoFlush = $true
+      $w2.WriteLine('INFO')
+      $info = $r2.ReadLine()
+      try { $w2.WriteLine('BYE') } catch {}
+      try { $c2.Dispose() } catch {}
+      "name=$label $info"
+    } else {
+      "name=$label state=busy"
+    }
+  }
+  exit 0
+}
+
 $cli = Connect-Pipe $Pipe
 if (-not $cli) { 'ERR connect failed'; exit 3 }
 $r = New-Object System.IO.StreamReader($cli)

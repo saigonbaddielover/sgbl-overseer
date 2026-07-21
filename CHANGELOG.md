@@ -5,6 +5,40 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-21
+
+### Added
+- **`winread <host>[/name]`** — the Windows peer of `read`: the last user prompt + last assistant
+  reply from the broker's agent, off its transcript, through the same `transcript.sh` readers. Until
+  now the only way to see a Windows agent's last exchange was `winpeek`, a noisy TUI screenshot.
+- **`winwait <host>[/name] [timeout]`** — the Windows peer of `wait`: block until the current turn
+  ends, return the **question** if the agent is stopped at an interactive prompt, print `idle` if it
+  was not busy. This is what a `winchat` timeout now points at, so a long turn is resumed instead of
+  re-sending the prompt.
+- **Several brokers per Windows host.** Every `win*` command takes `<host>[/name]`; the name selects
+  the broker's pipe (`overseer-broker-<name>`, default `overseer-broker`), so a Claude and a Codex —
+  or two agents on different repos — can run side by side in their own console windows:
+  `winbroker win-host/codex2 codex` then `winchat win-host/codex2 '...'`. Starting a broker now only
+  replaces the one with the same name (and kills its whole process tree, not just its direct child),
+  and its scheduled task is named per broker so two launches cannot collide.
+- **`winlist <host>`** — the Windows peer of `list`: every overseer broker on the host with its
+  child kind, working directory and whether the child is alive.
+
+### Fixed
+- **A multi-line prompt to a Windows agent now arrives verbatim.** 0.9.0 wrapped it in
+  bracketed-paste markers, but `WriteConsoleInput` never delivers the `ESC` of those markers — the
+  agent recorded the literal `[200~`/`[201~` around the prompt, and the newlines were swallowed
+  entirely, so the lines ran together. Newlines are now injected as the composer's own newline key
+  (Ctrl+J), which both Claude Code and Codex accept as a line break rather than a submit. Verified by
+  reading back what each agent actually recorded.
+- **The input box is cleared before the prompt is placed**, as `_paste_verified` has always done on
+  Linux. Without it, whatever the box already held was prepended to the prompt and submitted with it
+  — observed live as a stray fragment glued to the first line.
+
+### Changed
+- `winchat`'s wait, `winwait`'s wait, and their awaiting/liveness handling are one shared helper, so
+  the two commands cannot drift.
+
 ## [0.9.0] - 2026-07-21
 
 ### Added
