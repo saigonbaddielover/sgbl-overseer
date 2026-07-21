@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)][string]$Op,
-  [string]$Pipe = 'overseer-broker',
+  [string]$Broker = 'overseer-broker',
   [string]$B64 = '',
   [string]$Name = '',
   [string]$T1 = '',
@@ -10,108 +10,125 @@ param(
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
-function Connect-Pipe($name) {
-  for ($i = 0; $i -lt 8; $i++) {
-    $c = New-Object System.IO.Pipes.NamedPipeClientStream('.', $name, [System.IO.Pipes.PipeDirection]::InOut)
-    try { $c.Connect(3000); return $c } catch { try { $c.Dispose() } catch {}; Start-Sleep -Milliseconds 700 }
-  }
-  return $null
+function Get-ConfigPath($broker) {
+  if ($broker -notmatch '^overseer-broker(?:-[0-9A-Za-z_-]+)?$') { throw "invalid broker '$broker'" }
+  return (Join-Path (Join-Path $env:ProgramData 'overseer\brokers') "$broker.json")
+}
+function Get-Config($broker) {
+  $path = Get-ConfigPath $broker
+  if (-not (Test-Path -LiteralPath $path)) { throw "broker '$broker' not found" }
+  try { $config = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json } catch { throw "invalid broker descriptor for '$broker'" }
+  if (-not $config.Pipe -or -not $config.Token) { throw "incomplete broker descriptor for '$broker'" }
+  return $config
+}
+function Connect-Broker($config) {
+  $client = New-Object System.IO.Pipes.NamedPipeClientStream('.', $config.Pipe, [System.IO.Pipes.PipeDirection]::InOut)
+  try { $client.Connect(5000) } catch { try { $client.Dispose() } catch {}; throw 'connect failed' }
+  $reader = New-Object System.IO.StreamReader($client)
+  $writer = New-Object System.IO.StreamWriter($client); $writer.AutoFlush = $true
+  $writer.WriteLine("AUTH $($config.Token)")
+  $reply = $reader.ReadLine()
+  if ($reply -ne 'OK auth') { try { $client.Dispose() } catch {}; throw 'broker authentication failed' }
+  return [PSCustomObject]@{ Client = $client; Reader = $reader; Writer = $writer }
+}
+function Close-Broker($connection) {
+  try { $connection.Writer.WriteLine('BYE') } catch {}
+  try { $connection.Client.Dispose() } catch {}
+}
+function Request($connection, $line) {
+  $connection.Writer.WriteLine($line)
+  $reply = $connection.Reader.ReadLine()
+  if ($null -eq $reply -or -not $reply.StartsWith('OK')) { throw "broker rejected ${line}: $reply" }
+  return $reply
 }
 function Read-Frame($reader) {
   $head = $reader.ReadLine()
+  if ($head -ne '<<<SNAP') { throw "malformed snapshot frame: $head" }
   $lines = New-Object System.Collections.Generic.List[string]
-  if ($head -ne '<<<SNAP') { return $lines }
-  while ($true) { $x = $reader.ReadLine(); if ($null -eq $x -or $x -eq '>>>SNAP') { break }; $lines.Add($x) }
-  return $lines
+  while ($true) {
+    $x = $reader.ReadLine()
+    if ($null -eq $x) { throw 'truncated snapshot frame' }
+    if ($x -eq '>>>SNAP') { return $lines }
+    $lines.Add($x)
+  }
 }
-
-if ($Op -eq 'list') {
-  $names = @()
-  try {
-    $names = [System.IO.Directory]::GetFileSystemEntries('\\.\pipe\') |
-      ForEach-Object { $_.Substring($_.LastIndexOf('\') + 1) } |
-      Where-Object { $_ -like 'overseer-broker*' } | Sort-Object -Unique
-  } catch {}
-  if (-not $names) { 'none'; exit 0 }
-  foreach ($n in $names) {
-    $label = if ($n -eq 'overseer-broker') { '-' } else { $n -replace '^overseer-broker-', '' }
-    $c2 = $null
+function Label($broker) {
+  if ($broker -eq 'overseer-broker') { return '-' }
+  return ($broker -replace '^overseer-broker-', '')
+}
+function Invoke-List {
+  $dir = Join-Path $env:ProgramData 'overseer\brokers'
+  if (-not (Test-Path -LiteralPath $dir)) { 'none'; return }
+  $files = @(Get-ChildItem -LiteralPath $dir -Filter 'overseer-broker*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+  if (-not $files) { 'none'; return }
+  foreach ($file in $files) {
+    $broker = [IO.Path]::GetFileNameWithoutExtension($file.Name)
+    $label = Label $broker
     try {
-      $c2 = New-Object System.IO.Pipes.NamedPipeClientStream('.', $n, [System.IO.Pipes.PipeDirection]::InOut)
-      $c2.Connect(2000)
-    } catch { try { $c2.Dispose() } catch {}; $c2 = $null }
-    if ($c2) {
-      $r2 = New-Object System.IO.StreamReader($c2)
-      $w2 = New-Object System.IO.StreamWriter($c2); $w2.AutoFlush = $true
-      $w2.WriteLine('INFO')
-      $info = $r2.ReadLine()
-      try { $w2.WriteLine('BYE') } catch {}
-      try { $c2.Dispose() } catch {}
-      "name=$label $info"
-    } else {
-      "name=$label state=busy"
-    }
+      $config = Get-Config $broker
+      $connection = Connect-Broker $config
+      try {
+        $info = Request $connection 'INFO'
+        "name=$label $($info.Substring(3))"
+      } finally { Close-Broker $connection }
+    } catch { "name=$label state=offline" }
   }
-  exit 0
 }
-
-$cli = Connect-Pipe $Pipe
-if (-not $cli) { 'ERR connect failed'; exit 3 }
-$r = New-Object System.IO.StreamReader($cli)
-$w = New-Object System.IO.StreamWriter($cli); $w.AutoFlush = $true
-
-switch ($Op) {
-  'info' {
-    $w.WriteLine('INFO'); $r.ReadLine()
-  }
-  'stat' {
-    $w.WriteLine('STAT'); $r.ReadLine()
-  }
-  'snap' {
-    $w.WriteLine('SNAP'); (Read-Frame $r) | ForEach-Object { $_ }
-  }
-  'type' {
-    $w.WriteLine("TYPE $B64"); $r.ReadLine()
-  }
-  'paste' {
-    $w.WriteLine("PASTE $B64"); $r.ReadLine()
-  }
-  'key' {
-    $w.WriteLine("KEY $Name"); $r.ReadLine()
-  }
-  'quit' {
-    $w.WriteLine('QUIT'); 'OK quit'
-  }
-  'sh' {
-    $w.WriteLine("TYPE $B64"); $null = $r.ReadLine()
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    $found = $false
-    $lastGrid = @()
-    while ((Get-Date) -lt $deadline) {
-      Start-Sleep -Milliseconds 400
-      $w.WriteLine('SNAP')
-      $lines = Read-Frame $r
-      if ($lines.Count -eq 0) { continue }
-      $lastGrid = $lines
-      $i2 = -1
-      for ($k = 0; $k -lt $lines.Count; $k++) { if ($lines[$k].Trim().StartsWith($T2 + ':')) { $i2 = $k } }
-      if ($i2 -ge 0) {
-        $i1 = -1
-        for ($k = $i2 - 1; $k -ge 0; $k--) { if ($lines[$k].Trim() -eq $T1) { $i1 = $k; break } }
-        if ($i1 -ge 0) {
-          $rc = $lines[$i2].Trim().Substring($T2.Length + 1)
-          '<<<OUT'
-          for ($k = $i1 + 1; $k -lt $i2; $k++) { $lines[$k].TrimEnd() }
-          '>>>OUT'
-          "EXIT $rc"
-          $found = $true
-          break
+function Invoke-Client {
+  if ($Op -eq 'list') { Invoke-List; return }
+  $config = Get-Config $Broker
+  $configPath = Get-ConfigPath $Broker
+  $connection = Connect-Broker $config
+  try {
+    switch ($Op) {
+      'info' { (Request $connection 'INFO').Substring(3) }
+      'stat' { (Request $connection 'STAT').Substring(3) }
+      'snap' { $connection.Writer.WriteLine('SNAP'); (Read-Frame $connection.Reader) | ForEach-Object { $_ } }
+      'type' { Request $connection "TYPE $B64" }
+      'paste' { Request $connection "PASTE $B64" }
+      'key' { Request $connection "KEY $Name" }
+      'clear' { Request $connection 'CLEAR' }
+      'quit' {
+        $reply = Request $connection 'QUIT'
+        $reply
+        Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
+      }
+      'sh' {
+        $null = Request $connection "TYPE $B64"
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        $found = $false
+        $lastGrid = @()
+        while ((Get-Date) -lt $deadline) {
+          Start-Sleep -Milliseconds 400
+          $connection.Writer.WriteLine('SNAPALL')
+          $lines = Read-Frame $connection.Reader
+          if ($lines.Count -eq 0) { continue }
+          $lastGrid = $lines
+          $i2 = -1
+          for ($k = 0; $k -lt $lines.Count; $k++) { if ($lines[$k].Trim().StartsWith($T2 + ':')) { $i2 = $k } }
+          if ($i2 -ge 0) {
+            $i1 = -1
+            for ($k = $i2 - 1; $k -ge 0; $k--) { if ($lines[$k].Trim() -eq $T1) { $i1 = $k; break } }
+            if ($i1 -ge 0) {
+              $rc = $lines[$i2].Trim().Substring($T2.Length + 1)
+              '<<<OUT'
+              for ($k = $i1 + 1; $k -lt $i2; $k++) { $lines[$k].TrimEnd() }
+              '>>>OUT'
+              "EXIT $rc"
+              $found = $true
+              break
+            }
+          }
+        }
+        if (-not $found) {
+          'ERR sh timeout'
+          $lastGrid | Where-Object { $_.Trim() -ne '' } | ForEach-Object { '| ' + $_ }
+          exit 3
         }
       }
+      default { throw "unknown op $Op" }
     }
-    if (-not $found) { 'ERR sh timeout'; $lastGrid | Where-Object { $_.Trim() -ne '' } | ForEach-Object { '| ' + $_ } }
-  }
-  default { "ERR unknown op $Op" }
+  } finally { Close-Broker $connection }
 }
-try { $w.WriteLine('BYE') } catch {}
-try { $cli.Dispose() } catch {}
+
+try { Invoke-Client } catch { "ERR $($_.Exception.Message)"; exit 3 }

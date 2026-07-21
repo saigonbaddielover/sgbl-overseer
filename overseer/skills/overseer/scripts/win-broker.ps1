@@ -1,14 +1,21 @@
 param(
-  [string]$Child = 'pwsh.exe',
-  [string]$ChildArgs = '-NoProfile -NoLogo',
-  [string]$Pipe = 'overseer-broker',
-  [string]$Kind = 'shell',
-  [string]$WorkDir = ''
+  [Parameter(Mandatory = $true)][string]$Config
 )
 $ErrorActionPreference = 'Stop'
-$logf = Join-Path $env:TEMP "overseer-broker-$Pipe.log"
+if (-not (Test-Path -LiteralPath $Config)) { 'ERR broker config not found'; exit 2 }
+try { $cfg = Get-Content -Raw -LiteralPath $Config | ConvertFrom-Json } catch { "ERR invalid broker config: $($_.Exception.Message)"; exit 2 }
+$Child = [string]$cfg.Child
+$ChildArgs = [string]$cfg.ChildArgs
+$Pipe = [string]$cfg.Pipe
+$Token = [string]$cfg.Token
+$Kind = [string]$cfg.Kind
+$WorkDir = [string]$cfg.WorkDir
+$ConsoleUser = [string]$cfg.ConsoleUser
+if (-not $Child -or -not $Pipe -or -not $Token -or -not $Kind -or -not $ConsoleUser) { 'ERR incomplete broker config'; exit 2 }
+$logf = Join-Path $env:TEMP "overseer-broker-$($cfg.Broker).log"
 function Log($m) { try { Add-Content -LiteralPath $logf -Value ((Get-Date).ToString('HH:mm:ss.fff') + ' ' + $m) } catch {} }
-Set-Content -LiteralPath $logf -Value ((Get-Date).ToString('HH:mm:ss.fff') + " START pipe=$Pipe kind=$Kind") -Encoding UTF8
+Set-Content -LiteralPath $logf -Value ((Get-Date).ToString('HH:mm:ss.fff') + " START broker=$($cfg.Broker) kind=$Kind") -Encoding UTF8
+trap { Log "FATAL $($_.Exception.Message) at $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"; continue }
 
 function Resolve-StartDir {
   $p = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'
@@ -27,7 +34,12 @@ function Resolve-StartDir {
 function Get-DescendantPids($root) {
   $out = New-Object System.Collections.Generic.List[int]
   if (-not $root) { return $out }
-  $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId)
+  $now = [Environment]::TickCount
+  if ($script:procCache -and ($now - $script:procStamp) -lt 1500) { $all = $script:procCache }
+  else {
+    $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId)
+    $script:procCache = $all; $script:procStamp = $now
+  }
   $q = New-Object System.Collections.Generic.Queue[int]
   $out.Add([int]$root); $q.Enqueue([int]$root)
   while ($q.Count -gt 0) {
@@ -39,18 +51,50 @@ function Get-DescendantPids($root) {
   }
   return $out
 }
+function Stop-Descendants($root) {
+  for ($pass = 0; $pass -lt 3; $pass++) {
+    $script:procCache = $null
+    $tree = @(Get-DescendantPids $root)
+    Log "stop pass=$pass root=$root tree=$($tree -join ',')"
+    if ($tree.Count -le 1 -and $pass -gt 0) { break }
+    for ($k = $tree.Count - 1; $k -ge 0; $k--) { Stop-Process -Id $tree[$k] -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 400
+  }
+  if ($script:agentPid) { Stop-Process -Id $script:agentPid -Force -ErrorAction SilentlyContinue }
+}
 
+function Get-ClaimedTranscripts {
+  $out = New-Object System.Collections.Generic.List[string]
+  $dir = Join-Path $env:ProgramData 'overseer\brokers'
+  foreach ($f in (Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+    if ($f.FullName -eq $Config) { continue }
+    try {
+      $other = Get-Content -Raw -LiteralPath $f.FullName | ConvertFrom-Json
+      if ($other.Transcript) { $out.Add([string]$other.Transcript) }
+    } catch {}
+  }
+  return $out
+}
+function Set-ClaimedTranscript($path) {
+  try {
+    $cur = Get-Content -Raw -LiteralPath $Config | ConvertFrom-Json
+    $cur | Add-Member -NotePropertyName Transcript -NotePropertyValue $path -Force
+    $cur | ConvertTo-Json -Compress | Set-Content -LiteralPath $Config -Encoding UTF8
+  } catch {}
+}
 function Resolve-Transcript {
-  if ($script:txCache -and (Test-Path -LiteralPath $script:txCache)) { return ($script:txCache -replace '\\', '/') }
-  $found = ''
   try {
     if ($Kind -eq 'codex') {
-      $d = Join-Path $env:USERPROFILE '.codex\sessions'
-      $f = Get-ChildItem -Path $d -Recurse -Filter 'rollout-*.jsonl' -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTime -ge $script:childStart } |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-      if ($f) { $found = $f.FullName }
-    } elseif ($Kind -eq 'claude') {
+      if ($script:txCache -and (Test-Path -LiteralPath $script:txCache)) { return ($script:txCache -replace '\\', '/') }
+      $claimed = @(Get-ClaimedTranscripts)
+      $mine = @(Get-ChildItem -Path (Join-Path $env:USERPROFILE '.codex\sessions') -Recurse -Filter 'rollout-*.jsonl' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $script:childStart -and $claimed -notcontains $_.FullName } |
+        Sort-Object CreationTime | Select-Object -First 1)
+      if ($mine) { Set-ClaimedTranscript $mine[0].FullName; $script:txCache = $mine[0].FullName; return ($mine[0].FullName -replace '\\', '/') }
+      $script:txCache = ''
+      return ''
+    }
+    if ($Kind -eq 'claude') {
       $ch = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $env:USERPROFILE '.claude' }
       $sid = ''
       foreach ($p in (Get-DescendantPids $script:childPid)) {
@@ -60,20 +104,15 @@ function Resolve-Transcript {
           if ($sid) { break }
         }
       }
+      if (-not $sid) { $script:txCache = ''; $script:txSid = ''; return '' }
+      if ($script:txSid -eq $sid -and $script:txCache -and (Test-Path -LiteralPath $script:txCache)) { return ($script:txCache -replace '\\', '/') }
       $pd = Join-Path $ch 'projects'
-      if ($sid) {
-        $f = Get-ChildItem -Path $pd -Recurse -Filter "$sid*.jsonl" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($f) { $found = $f.FullName }
-      }
-      if (-not $found) {
-        $f = Get-ChildItem -Path $pd -Recurse -Filter '*.jsonl' -ErrorAction SilentlyContinue |
-          Where-Object { $_.LastWriteTime -ge $script:childStart } |
-          Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        if ($f) { $found = $f.FullName }
-      }
+      $f = Get-ChildItem -Path $pd -Recurse -Filter "$sid*.jsonl" -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($f) { $script:txSid = $sid; $script:txCache = $f.FullName; return ($f.FullName -replace '\\', '/') }
+      $script:txCache = ''
+      return ''
     }
   } catch {}
-  if ($found) { $script:txCache = $found; return ($found -replace '\\', '/') }
   return ''
 }
 
@@ -116,6 +155,17 @@ public static class ConIO {
     static extern bool ReadConsoleOutputCharacter(IntPtr h, StringBuilder b, uint len, COORD c, out uint read);
     [DllImport("kernel32.dll", SetLastError=true)]
     static extern bool GetConsoleScreenBufferInfo(IntPtr h, out CONSOLE_SCREEN_BUFFER_INFO i);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern bool SetConsoleScreenBufferSize(IntPtr h, COORD size);
+
+    public static int GrowBuffer(short rows) {
+        IntPtr h = GetStdHandle(STD_OUTPUT_HANDLE);
+        CONSOLE_SCREEN_BUFFER_INFO i;
+        if (!GetConsoleScreenBufferInfo(h, out i)) return -1;
+        if (i.dwSize.Y >= rows) return i.dwSize.Y;
+        if (!SetConsoleScreenBufferSize(h, new COORD(i.dwSize.X, rows))) return -2;
+        return rows;
+    }
 
     static INPUT_RECORD Rec(ushort vk, char c, uint ctrl, bool down) {
         var k = new KEY_EVENT_RECORD();
@@ -147,6 +197,13 @@ public static class ConIO {
         }
         return Emit(recs);
     }
+    public static uint Clear(int rounds) {
+        var recs = new List<INPUT_RECORD>();
+        for (int k = 0; k < rounds; k++) {
+            recs.Add(Rec(0x55, (char)0x15, 0x0008, true)); recs.Add(Rec(0x55, (char)0x15, 0x0008, false));
+        }
+        return Emit(recs);
+    }
     public static uint Paste(string s) {
         string body = s.Replace("\r\n", "\n").Replace("\r", "\n");
         var recs = new List<INPUT_RECORD>();
@@ -167,11 +224,8 @@ public static class ConIO {
         var arr = new INPUT_RECORD[] { Rec(vk, uc, ctrl, true), Rec(vk, uc, ctrl, false) };
         uint w; WriteConsoleInput(h, arr, 2, out w); return w;
     }
-    public static string Snapshot() {
+    static string ReadRows(int left, int top, int right, int bottom) {
         IntPtr h = GetStdHandle(STD_OUTPUT_HANDLE);
-        CONSOLE_SCREEN_BUFFER_INFO i;
-        if (!GetConsoleScreenBufferInfo(h, out i)) return "";
-        int left = i.srWindow.Left, top = i.srWindow.Top, right = i.srWindow.Right, bottom = i.srWindow.Bottom;
         int width = right - left + 1;
         var sb = new StringBuilder();
         for (int y = top; y <= bottom; y++) {
@@ -182,9 +236,23 @@ public static class ConIO {
         }
         return sb.ToString();
     }
+    public static string Snapshot() {
+        IntPtr h = GetStdHandle(STD_OUTPUT_HANDLE);
+        CONSOLE_SCREEN_BUFFER_INFO i;
+        if (!GetConsoleScreenBufferInfo(h, out i)) return "";
+        return ReadRows(i.srWindow.Left, i.srWindow.Top, i.srWindow.Right, i.srWindow.Bottom);
+    }
+    public static string History() {
+        IntPtr h = GetStdHandle(STD_OUTPUT_HANDLE);
+        CONSOLE_SCREEN_BUFFER_INFO i;
+        if (!GetConsoleScreenBufferInfo(h, out i)) return "";
+        int last = Math.Min(Math.Max(i.dwCursorPosition.Y, i.srWindow.Bottom), i.dwSize.Y - 1);
+        return ReadRows(0, 0, i.dwSize.X - 1, last);
+    }
 }
 '@
 Add-Type -TypeDefinition $src -Language CSharp
+Log "buffer rows=$([ConIO]::GrowBuffer(9999))"
 
 $keymap = @{
   'Enter' = @(0x0D, "`r", 0); 'Escape' = @(0x1B, [char]0x1B, 0); 'Tab' = @(0x09, "`t", 0)
@@ -203,22 +271,31 @@ function Send-Named($name) {
   }
   return -1
 }
+function New-PipeServer {
+  $sec = New-Object System.IO.Pipes.PipeSecurity
+  foreach ($identity in @($ConsoleUser, 'BUILTIN\Administrators')) {
+    $rule = New-Object System.IO.Pipes.PipeAccessRule($identity, [System.IO.Pipes.PipeAccessRights]::ReadWrite, [System.Security.AccessControl.AccessControlType]::Allow)
+    $sec.AddAccessRule($rule)
+  }
+  $acl = 'System.IO.Pipes.NamedPipeServerStreamAcl' -as [type]
+  if ($acl) { return $acl::Create($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::None, 0, 0, $sec) }
+  $ctorArgs = @($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::None, 0, 0, $sec)
+  return New-Object -TypeName System.IO.Pipes.NamedPipeServerStream -ArgumentList $ctorArgs
+}
 
 $myPid = $PID
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $Child
-$psi.Arguments = $ChildArgs
-$psi.UseShellExecute = $false
 $wd = if ($WorkDir) { $WorkDir } else { Resolve-StartDir }
 if (-not (Test-Path -LiteralPath $wd)) { $wd = $env:USERPROFILE }
-$psi.WorkingDirectory = $wd
 $script:txCache = ''
+$script:txSid = ''
+$script:procCache = $null
+$script:procStamp = 0
 $script:agentPid = 0
 $script:agentSeen = $false
 $script:childStart = (Get-Date).AddSeconds(-5)
-$null = [System.Diagnostics.Process]::Start($psi)
+$proc = Start-Process -FilePath $Child -ArgumentList $ChildArgs -WorkingDirectory $wd -NoNewWindow -PassThru
 Start-Sleep -Milliseconds 1200
-$childPid = (Get-CimInstance Win32_Process -Filter "ParentProcessId=$myPid" | Select-Object -First 1).ProcessId
+$childPid = if ($proc -and $proc.Id) { $proc.Id } else { (Get-CimInstance Win32_Process -Filter "ParentProcessId=$myPid" | Select-Object -First 1).ProcessId }
 $script:childPid = $childPid
 Log "child exe=$Child kind=$Kind workdir=$wd childPid=$childPid"
 function Get-AgentPid {
@@ -244,11 +321,14 @@ function ChildAlive {
 $done = $false
 while (-not $done) {
   if (-not (ChildAlive)) { Log 'child exited'; break }
-  $srv = New-Object System.IO.Pipes.NamedPipeServerStream($Pipe, [System.IO.Pipes.PipeDirection]::InOut)
+  try { $srv = New-PipeServer } catch { Log "pipe ERR $($_.Exception.Message)"; break }
   $srv.WaitForConnection()
   $r = New-Object System.IO.StreamReader($srv)
   $w = New-Object System.IO.StreamWriter($srv); $w.AutoFlush = $true
   try {
+    $auth = $r.ReadLine()
+    if ($auth -ne "AUTH $Token") { $w.WriteLine('ERR auth'); continue }
+    $w.WriteLine('OK auth')
     $client = $true
     while ($client -and $srv.IsConnected) {
       $line = $r.ReadLine()
@@ -266,8 +346,13 @@ while (-not $done) {
         if ($n -ge 0) { $w.WriteLine("OK $n") } else { $w.WriteLine("ERR unknown key $arg") }
       } elseif ($verb -eq 'SNAP') {
         $w.WriteLine('<<<SNAP'); $w.Write([ConIO]::Snapshot()); $w.WriteLine('>>>SNAP')
+      } elseif ($verb -eq 'CLEAR') {
+        try { $n = [ConIO]::Clear(16); $w.WriteLine("OK $n") }
+        catch { $w.WriteLine("ERR clear $($_.Exception.Message)") }
+      } elseif ($verb -eq 'SNAPALL') {
+        $w.WriteLine('<<<SNAP'); $w.Write([ConIO]::History()); $w.WriteLine('>>>SNAP')
       } elseif ($verb -eq 'INFO') {
-        $w.WriteLine("kind=$Kind workdir=$wd childPid=$childPid alive=$(ChildAlive) transcript=$(Resolve-Transcript)")
+        $w.WriteLine("OK kind=$Kind workdir=$wd childPid=$childPid alive=$(ChildAlive) transcript=$(Resolve-Transcript)")
       } elseif ($verb -eq 'STAT') {
         $tx = Resolve-Transcript
         $sz = -1; $mt = 0
@@ -277,13 +362,13 @@ while (-not $done) {
             if ($fi) { $sz = $fi.Length; $mt = ([DateTimeOffset]$fi.LastWriteTimeUtc).ToUnixTimeSeconds() }
           } catch {}
         }
-        $w.WriteLine("kind=$Kind alive=$(ChildAlive) size=$sz mtime=$mt transcript=$tx")
+        $w.WriteLine("OK kind=$Kind alive=$(ChildAlive) size=$sz mtime=$mt transcript=$tx")
       } elseif ($verb -eq 'PING') {
-        $w.WriteLine("PONG alive=$(ChildAlive)")
+        $w.WriteLine("OK alive=$(ChildAlive)")
       } elseif ($verb -eq 'BYE') {
         $client = $false
       } elseif ($verb -eq 'QUIT') {
-        $client = $false; $done = $true
+        $w.WriteLine('OK quit'); $client = $false; $done = $true
       } else {
         $w.WriteLine("ERR unknown $verb")
       }
@@ -295,4 +380,4 @@ while (-not $done) {
   }
 }
 Log 'broker exiting'
-try { if ($childPid) { Stop-Process -Id $childPid -Force -ErrorAction SilentlyContinue } } catch {}
+try { if ($childPid) { Stop-Descendants $childPid } } catch {}

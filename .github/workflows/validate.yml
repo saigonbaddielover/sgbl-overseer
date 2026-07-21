@@ -61,6 +61,31 @@ jobs:
       - name: parser fixture tests
         run: bash tests/run.sh
 
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Windows payloads parse
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem overseer/skills/overseer/scripts/win-*.ps1 | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) {
+              $bad = 1
+              Write-Host "::error file=$($_.Name)::$($errors | ForEach-Object { $_.Message })"
+            } else {
+              Write-Host "ok: $($_.Name)"
+            }
+          }
+          exit $bad
+
+      - name: Windows payload contracts
+        shell: pwsh
+        run: ./tests/win-contracts.ps1
+
   stress:
     runs-on: ubuntu-latest
     steps:

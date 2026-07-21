@@ -5,6 +5,66 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-21
+
+### Security
+- **The Windows broker pipe is now unguessable and authenticated.** It was named `overseer-broker[-name]`
+  — predictable and machine-wide — and accepted `TYPE`/`PASTE`/`KEY`/`QUIT` from any local caller, so
+  anything able to reach it could type into the driven agent. Each launch now mints a random pipe name
+  plus a 256-bit capability token, records both in an ACL-protected descriptor under
+  `%ProgramData%\overseer\brokers`, applies an explicit `PipeSecurity` allowing only the console user
+  and Administrators, and requires an `AUTH` handshake before any verb. Verified live: connecting by the
+  old predictable name fails, and a wrong token is refused with `ERR auth`.
+- **`workdir` is no longer interpolated into a remote PowerShell command line.** PowerShell expands
+  `$(...)` inside double quotes, so a crafted workdir could execute under the SSH identity. It now
+  travels base64-encoded and is decoded into a parameter value.
+- **Payloads are staged in `%ProgramData%\overseer`, not the SSH user's profile**, so the documented
+  setup where the SSH admin differs from the console user actually works instead of silently failing.
+
+### Fixed
+- **Two Codex brokers no longer share one transcript.** Resolution picked the newest rollout written
+  after the child started and cached it forever, so a second broker could bind to the first one's file
+  and report its replies. Each broker now claims a rollout in its own descriptor and skips rollouts
+  claimed by siblings. Verified live: two concurrent Codex brokers produced distinct rollouts, and
+  `winread` returned `ALPHAWIN` and `BETAWIN` to the right broker.
+- **Claude transcript resolution no longer falls back to "newest jsonl on the box"** — it resolves the
+  session id from a descendant-owned `sessions/<pid>.json` and reports no transcript until its own file
+  exists.
+- **`winstop` no longer orphans the agent.** Teardown walked the tree but killed it parent-first (a
+  `List[int]` returned from a function is unrolled to `Object[]`, whose missing `.Reverse()` silently
+  reordered the kill), so killing the console-sharing shell took the broker down before it reached the
+  agent. Kills are now leaf-first by index, retried, and verified. Verified live: `codex=0 brokers=0`.
+- **`winsh` no longer times out on output taller than the window.** The console screen buffer is the
+  window height by default, so the opening sentinel was destroyed rather than scrolled. The broker now
+  enlarges the buffer at startup and serves scrollback via `SNAPALL`. Verified live: all 200 lines of a
+  200-line command captured with `exit=0`.
+- **Delivery is verified against the composer, not the whole screen.** A 24-character substring probe
+  anywhere on screen counted as success; a single-line prompt is now matched for equality on the input
+  row, and a multi-line prompt against its paste chip.
+- **An aborted `winchat` clears the remote input box** instead of leaving the prompt staged where a
+  later `Enter` would submit it.
+- **A failed transcript fetch no longer silently bypasses the mid-turn guard** — `winchat` fails closed
+  unless `--force` is given.
+- **`winsh`/`winchat` check broker kind, liveness and busy state under the per-broker lock**, closing a
+  window where a concurrent `winbroker` could swap the child between the check and the keystrokes.
+- **The client fails loudly.** Protocol errors, missing descriptors, failed authentication, malformed
+  frames and a failed submit now exit non-zero instead of returning success, and `winbroker` fails
+  unless the child actually paints.
+
+### Added
+- **Windows payloads are covered in CI.** A `windows-latest` job parses every `win-*.ps1` with the
+  PowerShell parser and runs `tests/win-contracts.ps1` (23 assertions over the auth handshake, pipe ACL,
+  descriptor handling, argument encoding, teardown order and error exits). The parser check immediately
+  caught two real defects — a `$line:` scope-qualified variable and a `.Reverse()` on an unrolled array
+  — that had shipped past every existing check.
+- `OVERSEER_SCP` overrides the `scp` binary, matching `OVERSEER_SSH`.
+
+### Changed
+- The broker records the exact child pid from `Start-Process -PassThru` rather than guessing "first
+  child", which is what made the descendant walk unreliable.
+- Broker terminating errors are logged; a broker that dies during startup or teardown is no longer
+  silent.
+
 ## [0.10.1] - 2026-07-21
 
 ### Added
