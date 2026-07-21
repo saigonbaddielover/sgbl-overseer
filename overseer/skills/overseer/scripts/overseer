@@ -47,6 +47,12 @@ main() {
     on) cmd_on "$@" ;;
     deploy) cmd_deploy "$@" ;;
     winshow) cmd_winshow "$@" ;;
+    winbroker) cmd_winbroker "$@" ;;
+    winpeek) cmd_winpeek "$@" ;;
+    winkeys) cmd_winkeys "$@" ;;
+    winsh) cmd_winsh "$@" ;;
+    winchat) cmd_winchat "$@" ;;
+    winstop) cmd_winstop "$@" ;;
     ''|-h|--help)
       printf 'usage: overseer <command> [args]   (t = tmux pane id %%N or session name)\n'
       printf '  agent = a Claude Code OR Codex session; read/chat/send/wait auto-detect which.\n'
@@ -66,6 +72,12 @@ main() {
       printf '  deploy <host>              copy overseer to ~/.overseer on a remote ssh host (once, before "on")\n'
       printf '  on    <host> <command> [args]  run any overseer command on a remote ssh host (ControlPersist-reused; e.g. on sandbox chat %%0 hi)\n'
       printf '  winshow <host> [app]       open a GUI app (default Windows Terminal) on the VISIBLE console session of a remote WINDOWS ssh host\n'
+      printf '  winbroker <host> [pwsh|claude|codex] [workdir]  start a VISIBLE broker on a remote WINDOWS console hosting a shell/agent (drive it with winpeek/winkeys/winsh/winchat)\n'
+      printf '  winpeek <host>             snapshot the remote WINDOWS broker screen\n'
+      printf '  winkeys <host> <key|text>...  send named keys (Enter Escape Up C-c ...) or literal text to the remote WINDOWS broker child\n'
+      printf '  winsh <host> <command> [timeout]  run one command line in the remote WINDOWS broker pwsh child, wait, print output+exit\n'
+      printf '  winchat <host> <prompt> [timeout]  WINDOWS agent broker: send a prompt, wait the turn (transcript), print the reply\n'
+      printf '  winstop <host>             stop the remote WINDOWS broker and its child\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;
     *) _die "unknown command: $cmd" ;;

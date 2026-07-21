@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-21
+
+### Added
+- **Drive a shell / Claude Code / Codex on a remote Windows host, turn-based, over plain ssh
+  (`winbroker` + `winpeek`/`winkeys`/`winsh`/`winchat`/`winstop`).** A plain-SSH Windows host has no
+  tmux, and an ssh login lands in the invisible **Session 0**, so the existing `on`/tmux path can't
+  reach it. `overseer winbroker <host> [pwsh|claude|codex] [workdir]` launches a small cooperative
+  PowerShell **broker** on the host's logged-in **console** (Session 1, via the same interactive
+  scheduled-task bridge as `winshow`), hosting the chosen child in a window the user watches. The broker
+  is the tmux stand-in: it shares the child's console and exposes a **machine-wide named pipe**
+  (reachable from Session 0) whose protocol maps `WriteConsoleInput` → tmux `send-keys` and
+  `ReadConsoleOutputCharacter` → `capture-pane`, so the rendered screen grid comes back for free (no VT
+  emulator). It opens in the host's Windows Terminal default directory unless `[workdir]` is given.
+  - `winpeek <host>` snapshots the broker screen; `winkeys <host> <key|text>…` injects named keys
+    (`Enter` `Escape` `Up` `C-c` …) or literal text (a TUI needs a **separate** `Enter` to submit a
+    pasted burst); `winsh <host> <command>` runs one command line in a pwsh child with a sentinel and
+    returns output + exit code; `winstop <host>` stops the broker.
+  - `winchat <host> <prompt>` sends a prompt to a claude/codex child, submits it, and waits for the turn
+    by reading the agent's on-disk transcript with the **same `transcript.sh` readers** overseer uses
+    locally — run on the rollout/session `.jsonl` fetched back over ssh — so completion detection is one
+    seam across Linux and Windows, not a reimplementation. Prints the reply.
+  - Payloads: `scripts/win-broker.ps1` (console-API host + pipe server), `scripts/win-client.ps1` (the
+    one-shot `info|snap|type|key|sh|quit` client), `scripts/win-launch.ps1` (the Session-1 launcher).
+    Requires an **admin** ssh login and PowerShell 7 on the Windows host.
+
 ## [0.7.0] - 2026-07-20
 
 ### Added

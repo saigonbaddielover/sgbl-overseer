@@ -414,3 +414,124 @@ cmd_winshow() {
   printf '%s\n' "${line:-$out}"
   return "$rc"
 }
+_win_ssh() {
+  local host="$1" cmd="$2" rc=0 out='' i cmdir
+  cmdir="${TMPDIR:-/tmp}/overseer-ssh-$UID"; mkdir -p "$cmdir" 2>/dev/null || true
+  for i in 1 2 3; do
+    rc=0
+    # shellcheck disable=SC2086
+    out=$(${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
+      -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$host" "$cmd" 2>&1) || rc=$?
+    [ "$rc" != 255 ] && break
+    _nap
+  done
+  printf '%s\n' "${out//$'\r'/}"
+  return "$rc"
+}
+_win_scp() {
+  # shellcheck disable=SC2086
+  scp -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$2" "$1:$3" >/dev/null 2>&1
+}
+_win_fetch() {
+  # shellcheck disable=SC2086
+  scp -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$1:$2" "$3" >/dev/null 2>&1
+}
+_win_client() {
+  _win_ssh "$1" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-client.ps1\" -Op $2 -Pipe overseer-broker ${3:-}"
+}
+cmd_winbroker() {
+  _need ssh; _need scp
+  local host="${1:-}" which="${2:-pwsh}" wd="${3:-}"
+  [ -n "$host" ] || _die "usage: overseer winbroker <host> [pwsh|claude|codex] [workdir]   (start a VISIBLE broker on a remote WINDOWS host's console hosting pwsh/claude/codex; then drive it with winpeek/winkeys/winsh/winchat. Re-run to switch the child. Default child pwsh, default workdir = the host's Windows Terminal default)"
+  case "$which" in pwsh|claude|codex) : ;; *) _die "child must be pwsh, claude, or codex (got '$which')" ;; esac
+  local d="$_dir" f
+  for f in win-broker.ps1 win-client.ps1 win-launch.ps1; do [ -f "$d/$f" ] || _die "missing payload: $d/$f"; done
+  _win_scp "$host" "$d/win-broker.ps1" overseer-win-broker.ps1 \
+    && _win_scp "$host" "$d/win-client.ps1" overseer-win-client.ps1 \
+    && _win_scp "$host" "$d/win-launch.ps1" overseer-win-launch.ps1 \
+    || _die "could not copy payloads to $host (check ssh/scp to the host)"
+  local wdq="${wd//\"/}"
+  local out; out=$(_win_ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File \"%USERPROFILE%\\overseer-win-launch.ps1\" -Pipe overseer-broker -Which $which -WorkDir \"$wdq\"")
+  local line; line=$(printf '%s\n' "$out" | grep -aE '^(OK|ERR) ' | head -1)
+  printf '%s\n' "${line:-$out}"
+}
+cmd_winpeek() {
+  _need ssh
+  local host="${1:-}"; [ -n "$host" ] || _die "usage: overseer winpeek <host>   (snapshot the remote WINDOWS broker's screen; run 'overseer winbroker <host>' first)"
+  _win_client "$host" snap
+}
+cmd_winkeys() {
+  _need ssh; _need base64
+  local host="${1:-}"; shift || true
+  [ -n "$host" ] && [ "$#" -gt 0 ] || _die "usage: overseer winkeys <host> <key|text>...   (send named keys — Enter Escape Up Down Tab Backspace C-c ... — or literal text, to the remote WINDOWS broker's child)"
+  local a b64 out=''
+  for a in "$@"; do
+    case "$a" in
+      Enter|Escape|Tab|Backspace|Space|Delete|Up|Down|Left|Right|Home|End|PageUp|PageDown|C-[a-zA-Z])
+        out=$(_win_client "$host" key "-Name $a") ;;
+      *)
+        b64=$(printf '%s' "$a" | base64 | tr -d '\n')
+        out=$(_win_client "$host" type "-B64 $b64") ;;
+    esac
+    printf '%s\n' "$out"
+  done
+}
+cmd_winsh() {
+  _need ssh; _need base64
+  local host="${1:-}" cmd="${2:-}" timeout="${3:-$DEFAULT_TIMEOUT}"
+  [ -n "$host" ] && [ -n "$cmd" ] || _die "usage: overseer winsh <host> <command> [timeout_s]   (run one command line in the remote WINDOWS broker's pwsh child; start it with 'overseer winbroker <host> pwsh')"
+  _uint "$timeout"
+  case "$cmd" in *$'\n'*) _die "one command line only (chain with ; )" ;; esac
+  local t1 t2 inject b64
+  t1="OVSH1$$"; t2="OVSH2$$"
+  inject='Write-Host "'"$t1"'"; '"$cmd"'; Write-Host "'"$t2"':$LASTEXITCODE"'
+  b64=$(printf '%s\r' "$inject" | base64 | tr -d '\n')
+  local out; out=$(_win_client "$host" sh "-B64 $b64 -T1 $t1 -T2 $t2 -TimeoutSec $timeout")
+  if printf '%s\n' "$out" | grep -qaE '^EXIT '; then
+    local rc body
+    rc=$(printf '%s\n' "$out" | grep -aE '^EXIT ' | head -1 | awk '{print $2}')
+    body=$(printf '%s\n' "$out" | awk '/^<<<OUT$/{f=1;next} /^>>>OUT$/{f=0} f{print}')
+    printf '# host=%s exit=%s\n%s\n' "$host" "$rc" "$body"
+  else
+    printf '%s\n' "$out"
+  fi
+}
+cmd_winchat() {
+  _need ssh; _need jq; _need base64; _need scp
+  local host="${1:-}" prompt="${2:-}" timeout="${3:-$DEFAULT_TIMEOUT}"
+  [ -n "$host" ] && [ -n "$prompt" ] || _die "usage: overseer winchat <host> <prompt> [timeout_s]   (send a prompt to the remote WINDOWS broker's claude/codex, wait for the turn via its transcript, print the reply; start it with 'overseer winbroker <host> claude|codex')"
+  _uint "$timeout"
+  local info kind tx
+  info=$(_win_client "$host" info)
+  kind=$(printf '%s\n' "$info" | grep -oE 'kind=[a-z]+' | head -1 | cut -d= -f2)
+  tx=$(printf '%s\n' "$info" | grep -oE 'transcript=[^ ]+' | head -1 | cut -d= -f2-)
+  case "$kind" in claude|codex) : ;; *) _die "the broker on $host is hosting '${kind:-?}', not an agent — start one with: overseer winbroker $host claude|codex" ;; esac
+  local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/overseer-wintx.XXXXXX") || _die "mktemp failed"
+  local base=0
+  [ -n "$tx" ] && _win_fetch "$host" "$tx" "$tmp" && base=$(_h_turn_count "$kind" "$tmp"); base="${base:-0}"
+  local b64; b64=$(printf '%s' "$prompt" | base64 | tr -d '\n')
+  _win_client "$host" type "-B64 $b64" >/dev/null
+  _win_client "$host" key "-Name Enter" >/dev/null
+  printf '# sent to %s (waiting for the turn...)\n' "$host" >&2
+  local deadline=$((SECONDS + timeout)) cur
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    _nap; _nap
+    if [ -z "$tx" ]; then
+      info=$(_win_client "$host" info); tx=$(printf '%s\n' "$info" | grep -oE 'transcript=[^ ]+' | head -1 | cut -d= -f2-)
+      [ -n "$tx" ] || continue
+    fi
+    _win_fetch "$host" "$tx" "$tmp" || continue
+    cur=$(_h_turn_count "$kind" "$tmp"); cur="${cur:-0}"
+    if [ "$cur" -gt "$base" ]; then
+      printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$tmp")"
+      rm -f "$tmp"; return 0
+    fi
+  done
+  rm -f "$tmp"
+  _die "timeout after ${timeout}s waiting for the turn on $host (peek: overseer winpeek $host)"
+}
+cmd_winstop() {
+  _need ssh
+  local host="${1:-}"; [ -n "$host" ] || _die "usage: overseer winstop <host>   (stop the remote WINDOWS broker and its child)"
+  _win_client "$host" quit
+}
