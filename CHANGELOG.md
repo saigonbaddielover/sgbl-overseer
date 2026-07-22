@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-22
+
+### Added
+
+- **`fleet` can span the whole fleet, not just local panes.** `fleet` still defaults to the local
+  panes, but now takes the same inventory flags as `hosts` — **`--hosts`** (file / `~/.ssh/config`
+  inventory), **`--tailscale [--os NAME]`** (tailnet), **`-u USER`** (login user for bare hosts). With
+  one of them, every inventory host runs `on <host> fleet <sub>` — its *own* local sweep — in parallel,
+  and the results are aggregated one section per host (`===== host =====`), local panes first under
+  `===== local =====`. So `fleet --hosts status` surveys every agent on every machine in one command,
+  and `on`'s first-touch auto-deploy means a never-provisioned host still answers. A cross-fleet
+  broadcast has no tty to confirm at, so `fleet --hosts send`/`chat` **require `--yes`**. Local-only
+  `fleet` (no inventory flag) is unchanged. The inventory resolution is now a shared `_inventory`
+  helper used by both `fleet` and `hosts`; covered by new `tests/run.sh` unit tests against a
+  `tests/fixtures/hosts` fixture.
+
 ## [0.23.0] - 2026-07-22
 
 ### Added

@@ -132,6 +132,17 @@ eq "ts-hosts: ips, all os" "100.0.0.1
 100.0.0.2" "$(printf '# Health:\n100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts '')"
 eq "ts-hosts: filter by os" "100.0.0.2" "$(printf '100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts windows)"
 eq "ts-hosts: ignores non-peer lines" "100.0.0.1" "$(printf 'Health check:\n  - some warning\n100.0.0.1 sandbox u linux active\n' | _ts_hosts '')"
+_inv() { ( export OVERSEER_HOSTS="$FIX/hosts"; _inventory "$1" '' "$2" ''
+  printf 'SRC=%s\n' "$_INV_SRC"; printf '%s\n' "${_INV_TARGETS[@]}" ) ; }
+eq "inventory: OVERSEER_HOSTS resolves + applies defuser to bare hosts" "SRC=$FIX/hosts
+user@host-a
+fleetuser@host-b" "$(_inv 0 fleetuser)"
+eq "inventory: no defuser leaves bare hosts bare" "SRC=$FIX/hosts
+user@host-a
+host-b" "$(_inv 0 '')"
+eq "inventory: --tailscale with empty status dies" "yes" \
+  "$( ( _inventory 1 '' '' '' ) 2>&1 | grep -q 'tailscale needs' && echo yes || echo no)"
+
 eq "provision: --dry-run threads DRY=1" "yes" "$(_provision_script 1 | grep -qx 'DRY=1' && echo yes || echo no)"
 eq "provision: defaults to DRY=0"       "yes" "$(_provision_script | grep -qx 'DRY=0' && echo yes || echo no)"
 eq "provision: targets tmux and jq"     "yes" "$(_provision_script 0 | grep -q 'for c in tmux jq' && echo yes || echo no)"
