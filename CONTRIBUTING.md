@@ -49,19 +49,26 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
   serialization, large-rollout reader perf, and mid-turn crash liveness. Needs tmux; the checks above use
   throwaway *shell* panes, so no Claude/Codex is required. Set `OVERSEER_STRESS_CODEX_PANE=%N` to also
   assert the Codex `!`-refuse safety against a real Codex pane. Run it by hand when touching the
-  delivery, lock, or reader paths. Reader-perf ceilings are tunable via
-  `OVERSEER_STRESS_PERF_LASTREPLY` / `OVERSEER_STRESS_PERF_TURNS`.
+  delivery, lock, or reader paths. The reader-perf section (C) measures on an 18 MB rollout; run by
+  hand it *asserts* against ceilings tunable via `OVERSEER_STRESS_PERF_LASTREPLY` /
+  `OVERSEER_STRESS_PERF_TURNS`, but **CI sets `OVERSEER_STRESS_NO_PERF=1` so it only prints the timing
+  and never gates** — a shared runner's numbers are too noisy to fail on honestly.
 - **`tests/win-flow.sh`** — mocks the two remote chokepoints (`_win_client`, `_win_fetch`) and runs the
   real `win*` bash orchestration against a recorded call log: the mid-turn and scp-failure guards, the
   `pwsh`/dead-child/Codex-`!` refusals, box cleanup after a failed submit or unverified delivery, the
   `mtime:size` gating, and broker-target parsing. No ssh, no host, runs in CI.
 - **`tests/win-payloads.sh`** — parses every shipped `win-*.ps1` with
-  `System.Management.Automation.Language.Parser` and then runs **`tests/win-contracts.ps1`**, whose
-  assertions cover the AUTH handshake, the pipe-constructor fallback, exclusive rollout claiming, the
-  agent-command override, descriptor cleanup on `quit`, no workdir interpolation, and no assignment to
-  the read-only `$pid`. **CI is the authority**: the `windows-latest` job runs `tests/win-parse.ps1`
-  and `tests/win-contracts.ps1` natively under `pwsh`. `win-payloads.sh` just runs those same two
-  scripts for you locally — it is a convenience, not the gate.
+  `System.Management.Automation.Language.Parser` and then runs **`tests/win-contracts.ps1`**. That file
+  now **executes** the payloads' pure functions rather than grepping their source: it AST-extracts each
+  one and calls it with real inputs — the transcript-path validator (`Test-TranscriptPath`) against the
+  injection battery, broker-name validation (`Get-ConfigPath`) accept/reject, the snapshot frame reader
+  (`Read-Frame`) on good/bad/truncated frames, the descriptor JSON round-trip (secret carries no
+  transcript claim), and — on Windows only — the codex claim isolation through the split state file. A
+  smaller set of labeled `src:` tripwires still greps source for the Windows-runtime constructs a unit
+  test can't exercise (the pipe ACL, `FirstPipeInstance`, the anonymous client, the scheduled task, the
+  ACL functions). **CI is the authority**: the `windows-latest` job runs `tests/win-parse.ps1` and
+  `tests/win-contracts.ps1` natively under `pwsh`. `win-payloads.sh` just runs those same two scripts
+  for you locally — it is a convenience, not the gate.
 
   **PowerShell runs on Linux**, so run it before pushing rather than waiting for CI — it has caught
   defects (an unterminated string, a `$line:` scope parse) that every other check passed:
@@ -73,7 +80,7 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
 
   Exit 1 means a payload failed, 2 means no PowerShell was found.
 
-CI (`.github/workflows/validate.yml`) runs three jobs on every push and PR:
+CI (`.github/workflows/validate.yml`) runs three jobs on every push to `main` and every pull request:
 
 | job | runner | steps |
 |---|---|---|

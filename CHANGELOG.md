@@ -5,6 +5,43 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-22
+
+The documentation-and-test-honesty half of the audit: make the docs match the code and make the tests
+prove what their names claim. No behavioural change beyond the `winpeek` fix.
+
+### Changed
+
+- **`tests/win-contracts.ps1` now executes the payloads instead of grepping their source.** It was
+  entirely `Get-Content | -match` assertions — so a broker with authentication disabled behind
+  `if ($false -and …)` still passed. It now AST-extracts each pure function and *calls* it:
+  `Test-TranscriptPath` against the full scp-injection battery, `Get-ConfigPath` broker-name
+  accept/reject, `Read-Frame` on good/bad/truncated frames, the descriptor JSON round-trip (the secret
+  carries no transcript claim), and — on Windows — the codex claim isolation through the split state
+  file. A smaller set of clearly-labeled `src:` tripwires still greps source for the Windows-runtime
+  constructs a unit test cannot exercise (the pipe ACL, `FirstPipeInstance`, the anonymous client, the
+  scheduled task, the ACL functions). Each executed check was mutation-verified to fail against broken
+  code.
+- **CI no longer gates on reader-performance timing.** The `stress` job set ceilings (`20s`/`8s`) with
+  16–400× headroom over the real numbers, so a 10× regression shipped green — a decorative check. CI
+  now runs the stress subset with `OVERSEER_STRESS_NO_PERF=1`, which measures the reader on an 18 MB
+  rollout and *prints* the timing without asserting; run by hand the ceilings still gate.
+
+### Fixed
+
+- **`winpeek` normalizes the composer's U+00A0 to a space**, like every other Windows screen read —
+  it was calling the raw client, so a Claude composer's non-breaking-space gutter showed through. This
+  makes the v0.13.0 changelog's claim about `winpeek` actually true.
+
+### Documentation
+
+- Corrected drift the audit found across every surface: `CODEX_HOME` affects `doctor` only (live Codex
+  discovery reads the open rollout off `/proc`), not `read`/`chat`/`wait`; `set -eu`, not `set -euo`,
+  and no `pipefail`; CI runs on pushes to `main` and PRs, not "every push"; the Linux controller also
+  needs `base64` and `iconv` for the remote/Windows commands; and removed the brittle "~25-command"
+  counts from the design notes. The `win-contracts.ps1` and stress-perf descriptions in
+  `CONTRIBUTING.md` and `docs/WINDOWS.md` now match what those tests actually do.
+
 ## [0.15.0] - 2026-07-22
 
 The security half of the audit, for the remote-Windows transport. The broker runs **as the console

@@ -339,8 +339,9 @@ installed just polls — the same safe fallback, ~2s slower, never blocked.
 - Optional environment overrides. `OVERSEER_TIMEOUT` (default `600`, the
   fallback `[timeout]` for `chat`/`wait`/`sh`) and `OVERSEER_POLL_INTERVAL` (default `0.25`, the poll
   cadence) are **validated at startup**, so a bad value fails loudly rather than misbehaving later;
-  the rest are taken as given. `CLAUDE_HOME` / `CODEX_HOME` (defaults `~/.claude`, `~/.codex`) point at non-default
-  state directories.
+  the rest are taken as given. `CLAUDE_HOME` (default `~/.claude`) points Claude discovery at a
+  non-default state directory; `CODEX_HOME` (default `~/.codex`) is read only by `doctor` — live Codex
+  discovery reads the open rollout off `/proc`, so it does not depend on it.
 
 ## Install
 

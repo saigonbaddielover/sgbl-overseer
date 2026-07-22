@@ -11,8 +11,10 @@ declare -a SESS=()
 pass=0; fail=0
 PERF_LASTREPLY="${OVERSEER_STRESS_PERF_LASTREPLY:-3}"
 PERF_TURNS="${OVERSEER_STRESS_PERF_TURNS:-1}"
+NO_PERF="${OVERSEER_STRESS_NO_PERF:-0}"
 ok(){ printf '  ok   %s\n' "$1"; pass=$((pass+1)); }
 no(){ printf '  FAIL %s\n' "$1"; fail=$((fail+1)); }
+info(){ printf '  info %s\n' "$1"; }
 
 command -v tmux >/dev/null 2>&1 || { echo "stress: tmux required (this harness is manual, not CI)"; exit 2; }
 
@@ -45,9 +47,15 @@ POLL_INTERVAL=0.25; _nap(){ sleep "$POLL_INTERVAL"; }
 # shellcheck source=/dev/null
 . "$LIB/discovery.sh"; . "$LIB/transcript.sh"; . "$LIB/tui.sh"
 t0=$(date +%s.%N); _cx_last_reply "$CX" >/dev/null; t1=$(date +%s.%N)
-awk "BEGIN{exit !($t1-$t0 < $PERF_LASTREPLY)}" && ok "_cx_last_reply < ${PERF_LASTREPLY}s on $((sz/1024/1024))MB ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_cx_last_reply too slow (>= ${PERF_LASTREPLY}s)"
+lr=$(awk "BEGIN{printf \"%.2f\",$t1-$t0}")
 t0=$(date +%s.%N); _turns_after codex "$CX" $((sz-5000)) >/dev/null; t1=$(date +%s.%N)
-awk "BEGIN{exit !($t1-$t0 < $PERF_TURNS)}" && ok "_turns_after(near-end offset) < ${PERF_TURNS}s ($(awk "BEGIN{printf \"%.2f\",$t1-$t0}")s)" || no "_turns_after too slow (>= ${PERF_TURNS}s)"
+ta=$(awk "BEGIN{printf \"%.2f\",$t1-$t0}")
+if [ "$NO_PERF" = 1 ]; then
+  info "_cx_last_reply on $((sz/1024/1024))MB: ${lr}s   _turns_after(near-end): ${ta}s   (timing only, not asserted — set OVERSEER_STRESS_NO_PERF=0 to gate)"
+else
+  awk "BEGIN{exit !($lr < $PERF_LASTREPLY)}" && ok "_cx_last_reply < ${PERF_LASTREPLY}s on $((sz/1024/1024))MB (${lr}s)" || no "_cx_last_reply too slow (>= ${PERF_LASTREPLY}s)"
+  awk "BEGIN{exit !($ta < $PERF_TURNS)}" && ok "_turns_after(near-end offset) < ${PERF_TURNS}s (${ta}s)" || no "_turns_after too slow (>= ${PERF_TURNS}s)"
+fi
 
 echo "== E: crash liveness (harness gone -> rc=3, not timeout) =="
 se="ovS_E_$$"; tmux new-session -d -s "$se" -x 80 -y 24 2>/dev/null; SESS+=("$se")

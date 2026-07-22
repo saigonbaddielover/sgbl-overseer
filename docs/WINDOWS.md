@@ -11,7 +11,7 @@ actually recorded.
 
 ## Prerequisites
 
-On the **Linux controller**: `ssh` and `scp` on `PATH` (plus overseer's usual `jq`/`bash ≥ 4.1`).
+On the **Linux controller**: `ssh`, `scp`, `base64` and `iconv` on `PATH` (plus overseer's usual `jq`/`bash ≥ 4.1`).
 Overrides: `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`, `OVERSEER_SCP`.
 
 On the **Windows target**:
@@ -224,11 +224,14 @@ the split descriptor — precisely so the secret `<broker>.json` can stay read-o
 
 `tests/win-parse.ps1` parses every `win-*.ps1` with
 `System.Management.Automation.Language.Parser` (it caught two real defects on its first run that every
-prior check had passed). `tests/win-contracts.ps1` asserts the invariants above —
-the AUTH handshake, the pipe constructor fallback, exclusive rollout claiming, the agent-command
-override, descriptor cleanup on `quit`, no workdir interpolation, no assignment to `$pid`. CI runs
-those two scripts natively under `pwsh` on `windows-latest` — that job is the gate. But **PowerShell
-runs on Linux too**, so you can run the same checks before pushing:
+prior check had passed). `tests/win-contracts.ps1` **executes** the payloads' pure functions — it
+AST-extracts each and calls it: `Test-TranscriptPath` against the scp-injection battery, `Get-ConfigPath`
+broker-name accept/reject, `Read-Frame` on good/bad/truncated frames, the descriptor round-trip (the
+secret carries no transcript claim), and — on Windows — the codex claim isolation through the split
+state file. The Windows-runtime constructs a unit test cannot exercise (the pipe ACL, `FirstPipeInstance`,
+the anonymous client, the scheduled task) stay as labeled `src:` source tripwires. CI runs both scripts
+natively under `pwsh` on `windows-latest` — that job is the gate. But **PowerShell runs on Linux too**,
+so you can run the same checks before pushing:
 `bash tests/win-payloads.sh` (or `OVERSEER_PWSH=/path/to/pwsh …`), which is a thin wrapper over the
 identical scripts.
 

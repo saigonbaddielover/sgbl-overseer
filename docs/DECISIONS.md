@@ -44,7 +44,7 @@ Keep the single bash program. The cost/benefit does not favor a rewrite:
 - **Testability is adequate.** The pure parsers (turn/busy/reply/prompt/awaiting/shell) are factored out
   and covered by fixture tests in CI; the rest is inherently live-verified against a real tmux pane, which
   a rewrite would not change.
-- **`set -euo` discipline + shellcheck + `-x` cross-file linting** catch the classic shell footguns, and
+- **`set -eu` discipline + shellcheck + `-x` cross-file linting** catch the classic shell footguns, and
   the code stays within a strict style (self-documenting, no prose comments, size limits).
 
 ### Consequences
@@ -90,10 +90,10 @@ the model at the moment it drives a pane, and nowhere else.
 
 ### Options considered
 
-1. **Skill + hooks (chosen).** `SKILL.md` is read only when the task is relevant, so the ~25-command
+1. **Skill + hooks (chosen).** `SKILL.md` is read only when the task is relevant, so the whole command
    surface costs nothing on unrelated turns. The hooks are pure accelerators — three per-session mtime
    markers; a session without them falls back to polling, so nothing breaks when they are absent.
-2. **MCP server.** Tool schemas are context-resident on *every* request, so 25 commands would be paid
+2. **MCP server.** Tool schemas are context-resident on *every* request, so the whole surface would be paid
    for continuously whether or not any pane is being driven. It also implies a long-lived server, while
    every overseer command is one-shot and stateless — state lives in tmux, `/proc` and the transcripts,
    which is precisely why the tool needs no store of its own. Rejected.
