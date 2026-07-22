@@ -111,6 +111,17 @@ eq "reject spaced session name"  "no"  "$(_ok_session_name 'a b' && echo yes || 
 eq "reject slashed session name" "no"  "$(_ok_session_name a/b   && echo yes || echo no)"
 eq "reject punct session name"   "no"  "$(_ok_session_name 'a!b' && echo yes || echo no)"
 
+eq "hosts: parse strips comments + blanks, first token wins" "sandbox@ubuntu-sandbox
+ndman@100.77.19.60" "$(printf '# fleet\n\nsandbox@ubuntu-sandbox  # linux box\n  ndman@100.77.19.60 win\n' | _hosts_parse)"
+eq "ssh-config: non-wildcard Host tokens only" "sandbox
+web1
+web2" "$(printf 'Host *\n  User x\nHost sandbox\n  HostName 1.2.3.4\nHost web1 web2 !bad *.eg\n  User y\n' | _ssh_config_hosts)"
+eq "ts-state: active peer"   "active"  "$(printf '100.0.0.1 sandbox u linux active; direct\n' | _ts_state sandbox)"
+eq "ts-state: offline peer"  "offline" "$(printf '100.0.0.2 winbox u windows offline, last seen 3d ago\n' | _ts_state 100.0.0.2)"
+eq "ts-state: idle peer"     "idle"    "$(printf '100.0.0.3 idlebox u linux idle, tx 1 rx 2\n' | _ts_state idlebox)"
+eq "ts-state: known but no session" "-" "$(printf '100.0.0.4 seenbox u linux -\n' | _ts_state seenbox)"
+eq "ts-state: unknown host"  "?"       "$(printf '100.0.0.1 sandbox u linux active\n' | _ts_state ghost)"
+
 _startgate() {
   ( _need() { :; }; _nap() { :; }
     _harness_of() { printf claude; }

@@ -62,6 +62,22 @@ _is_posix_shell() {
   esac
 }
 _ok_session_name() { case "${1:-}" in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
+_hosts_parse() { awk '{sub(/#.*/, ""); if ($1 != "") print $1}'; }
+_ssh_config_hosts() {
+  awk 'tolower($1) == "host" { for (i = 2; i <= NF; i++) if ($i !~ /[*?!]/) print $i }'
+}
+_ts_state() {
+  awk -v hp="$1" '
+    $1 == hp || $2 == hp {
+      s = "-"
+      if (index($0, "offline")) s = "offline"
+      else if (index($0, "active")) s = "active"
+      else if (index($0, "idle")) s = "idle"
+      print s; found = 1; exit
+    }
+    END { if (!found) print "?" }
+  '
+}
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
 # prune by pane command first (claude runs as `claude`, codex as `node`) so the fd scan only runs
 # on plausible panes.

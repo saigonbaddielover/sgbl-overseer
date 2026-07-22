@@ -443,3 +443,81 @@ cmd_deploy() {
   tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
     && printf 'overseer: deployed scripts to %s:~/%s/\n' "$host" "$dest"
 }
+_host_probe() {
+  local target="$1" timeout="$2" ts="$3"
+  local hp="${target##*@}" out rc os ssh drive online
+  hp="${hp%%:*}"
+  online=$(printf '%s\n' "$ts" | _ts_state "$hp") || online='?'
+  # shellcheck disable=SC2086
+  if out=$(${OVERSEER_SSH:-ssh} -o BatchMode=yes -o ConnectTimeout="$timeout" ${OVERSEER_SSH_OPTS:-} "$target" 'uname -s; command -v tmux; command -v jq' 2>&1); then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [ "$rc" = 255 ]; then
+    case "$out" in
+      *"Permission denied"*|*publickey*|*password*) ssh=deny ;;
+      *) ssh=unreach ;;
+    esac
+    os='?'; drive='-'
+  else
+    ssh=ok
+    case "$out" in
+      *"is not recognized"*|*"not recognized as"*) os=windows; drive='win*' ;;
+      *Linux*)
+        os=linux
+        case "$out" in
+          *tmux*) case "$out" in *jq*) drive=yes ;; *) drive='no:jq' ;; esac ;;
+          *)      case "$out" in *jq*) drive='no:tmux' ;; *) drive='no:tmux,jq' ;; esac ;;
+        esac ;;
+      *Darwin*) os=macos; drive='no:macos' ;;
+      *) os='?'; drive='?' ;;
+    esac
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$target" "$online" "$os" "$ssh" "$drive"
+}
+cmd_hosts() {
+  _need ssh
+  local listonly=0 timeout=6
+  while :; do case "${1:-}" in
+    --list) listonly=1; shift ;;
+    -t) [ -n "${2:-}" ] || _die "usage: overseer hosts [--list] [-t seconds]"; timeout="$2"; shift 2 ;;
+    -*) _die "unknown flag '$1' (usage: overseer hosts [--list] [-t seconds])" ;;
+    *) break ;;
+  esac; done
+  _uint "$timeout"
+  local src content cfg="$HOME/.ssh/config" xdg="${XDG_CONFIG_HOME:-$HOME/.config}/overseer/hosts"
+  if [ -n "${OVERSEER_HOSTS:-}" ]; then
+    [ -r "$OVERSEER_HOSTS" ] || _die "OVERSEER_HOSTS is set but not readable: $OVERSEER_HOSTS"
+    src="$OVERSEER_HOSTS"; content=$(_hosts_parse < "$OVERSEER_HOSTS")
+  elif [ -r "$xdg" ]; then
+    src="$xdg"; content=$(_hosts_parse < "$xdg")
+  elif [ -r "$cfg" ]; then
+    src="$cfg (Host entries)"; content=$(_ssh_config_hosts < "$cfg")
+  else
+    _die "no fleet inventory found. Set OVERSEER_HOSTS to a file of ssh targets (one 'user@host' or ssh-config alias per line), create $xdg, or add Host entries to $cfg"
+  fi
+  local -a targets=(); local t
+  while IFS= read -r t; do [ -n "$t" ] && targets+=("$t"); done <<< "$content"
+  [ "${#targets[@]}" -gt 0 ] || _die "no hosts in $src"
+  if [ "$listonly" = 1 ]; then
+    printf 'source: %s\n' "$src"
+    printf '%s\n' "${targets[@]}"
+    return 0
+  fi
+  local ts=''
+  command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true)
+  local tmp="${TMPDIR:-/tmp}/overseer-hosts-$UID-$$"
+  mkdir -p "$tmp" 2>/dev/null || _die "could not create temp dir: $tmp"
+  local i=0
+  for t in "${targets[@]}"; do
+    ( _host_probe "$t" "$timeout" "$ts" >"$tmp/$i" 2>/dev/null ) &
+    i=$((i + 1))
+  done
+  wait
+  printf 'source: %s\n\n' "$src"
+  printf 'HOST\tONLINE\tOS\tSSH\tDRIVE\n'
+  i=0
+  for t in "${targets[@]}"; do cat "$tmp/$i" 2>/dev/null; i=$((i + 1)); done
+  rm -rf "$tmp" 2>/dev/null || true
+}
