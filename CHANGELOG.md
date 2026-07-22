@@ -21,6 +21,14 @@ All notable changes to this project are documented here. The format is based on
   helper used by both `fleet` and `hosts`; covered by new `tests/run.sh` unit tests against a
   `tests/fixtures/hosts` fixture.
 
+### Fixed
+
+- **`deploy` no longer hangs on an unreachable host.** `deploy`'s ssh was the one remote path without a
+  `ConnectTimeout`, so a dead host blocked on TCP for the system default (~2 min) instead of failing
+  fast. It now uses `-o ConnectTimeout=10` like every other remote call — which matters more now that
+  `fleet --hosts` auto-deploys across a whole inventory, where one unreachable host would otherwise
+  stall the batch.
+
 ## [0.23.0] - 2026-07-22
 
 ### Added

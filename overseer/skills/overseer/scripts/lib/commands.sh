@@ -491,7 +491,7 @@ cmd_deploy() {
   [ -n "$host" ] || _die "usage: overseer deploy <host>   (copy overseer's scripts to ~/.overseer on a remote ssh host, do this once before 'overseer on <host> ...')"
   local dest="${OVERSEER_REMOTE_DIR:-.overseer}"
   # shellcheck disable=SC2086
-  tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
+  tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
     && printf 'overseer: deployed scripts to %s:~/%s/\n' "$host" "$dest"
 }
 _host_probe() {
