@@ -129,6 +129,18 @@ for c in "cmd_winsh host/x 'echo hi' 5" "cmd_winchat --yes host/x hi" "cmd_winwa
   has "${c%% *} names the broker and host"     "$out" "on host"
 done
 
+printf -- '-- a tampered transcript path is refused before any fetch\n'
+
+out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_winread host/x 2>&1 )
+has   "winread refuses a metachar transcript path" "$out" 'unexpected transcript path'
+lacks "winread never fetches a bad path"           "$(calls)" 'fetch '
+
+out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_winwait host/x 5 2>&1 )
+has   "winwait refuses a metachar transcript path" "$out" 'unexpected transcript path'
+
+out=$( _mock; MOCK_TX='C:/Users/John Doe/.claude/projects/x/y.jsonl'; cmd_winread host/x 2>&1 )
+has   "winread accepts a spaced-username path"     "$(calls)" 'fetch '
+
 out=$( _mock; MOCK_KIND=shell; cmd_winsh host/x 'Get-Date' 5 2>&1 )
 sh_payload=$(awk '/^sh -B64 /{print $3}' "$TMP/calls" | head -1 | base64 -d 2>/dev/null)
 has "winsh resets LASTEXITCODE before the command" "$sh_payload" 'global:LASTEXITCODE = $null'

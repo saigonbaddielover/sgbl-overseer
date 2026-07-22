@@ -11,7 +11,9 @@ $Token = [string]$cfg.Token
 $Kind = [string]$cfg.Kind
 $WorkDir = [string]$cfg.WorkDir
 $ConsoleUser = [string]$cfg.ConsoleUser
+$StatePath = [string]$cfg.StatePath
 if (-not $Child -or -not $Pipe -or -not $Token -or -not $Kind -or -not $ConsoleUser) { 'ERR incomplete broker config'; exit 2 }
+if (-not $StatePath) { $StatePath = ($Config -replace '\.json$', '.state.json') }
 $logf = Join-Path $env:TEMP "overseer-broker-$($cfg.Broker).log"
 function Log($m) { try { Add-Content -LiteralPath $logf -Value ((Get-Date).ToString('HH:mm:ss.fff') + ' ' + $m) } catch {} }
 Set-Content -LiteralPath $logf -Value ((Get-Date).ToString('HH:mm:ss.fff') + " START broker=$($cfg.Broker) kind=$Kind") -Encoding UTF8
@@ -66,8 +68,8 @@ function Stop-Descendants($root) {
 function Get-ClaimedTranscripts {
   $out = New-Object System.Collections.Generic.List[string]
   $dir = Join-Path $env:ProgramData 'overseer\brokers'
-  foreach ($f in (Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
-    if ($f.FullName -eq $Config) { continue }
+  foreach ($f in (Get-ChildItem -LiteralPath $dir -Filter '*.state.json' -File -ErrorAction SilentlyContinue)) {
+    if ($f.FullName -eq $StatePath) { continue }
     try {
       $other = Get-Content -Raw -LiteralPath $f.FullName | ConvertFrom-Json
       if ($other.Transcript) { $out.Add([string]$other.Transcript) }
@@ -77,10 +79,11 @@ function Get-ClaimedTranscripts {
 }
 function Set-ClaimedTranscript($path) {
   try {
-    $cur = Get-Content -Raw -LiteralPath $Config | ConvertFrom-Json
-    $cur | Add-Member -NotePropertyName Transcript -NotePropertyValue $path -Force
-    $cur | ConvertTo-Json -Compress | Set-Content -LiteralPath $Config -Encoding UTF8
+    [ordered]@{ Transcript = $path } | ConvertTo-Json -Compress | Set-Content -LiteralPath $StatePath -Encoding UTF8
   } catch {}
+}
+function Test-TranscriptPath($p) {
+  return ($p -match '^[A-Za-z]:[\\/][A-Za-z0-9/\\:._ -]*\.jsonl\z')
 }
 function Resolve-Transcript {
   try {
@@ -278,8 +281,8 @@ function New-PipeServer {
     $sec.AddAccessRule($rule)
   }
   $acl = 'System.IO.Pipes.NamedPipeServerStreamAcl' -as [type]
-  if ($acl) { return $acl::Create($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::None, 0, 0, $sec) }
-  $ctorArgs = @($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::None, 0, 0, $sec)
+  if ($acl) { return $acl::Create($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::FirstPipeInstance, 0, 0, $sec) }
+  $ctorArgs = @($Pipe, [System.IO.Pipes.PipeDirection]::InOut, 1, [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::FirstPipeInstance, 0, 0, $sec)
   return New-Object -TypeName System.IO.Pipes.NamedPipeServerStream -ArgumentList $ctorArgs
 }
 
@@ -327,7 +330,8 @@ while (-not $done) {
   $w = New-Object System.IO.StreamWriter($srv); $w.AutoFlush = $true
   try {
     $auth = $r.ReadLine()
-    if ($auth -ne "AUTH $Token") { $w.WriteLine('ERR auth'); continue }
+    $want = "AUTH $Token"
+    if ($null -eq $auth -or $auth.Length -ne $want.Length -or -not [string]::Equals($auth, $want, [StringComparison]::Ordinal)) { $w.WriteLine('ERR auth'); continue }
     $w.WriteLine('OK auth')
     $client = $true
     while ($client -and $srv.IsConnected) {
@@ -352,9 +356,12 @@ while (-not $done) {
       } elseif ($verb -eq 'SNAPALL') {
         $w.WriteLine('<<<SNAP'); $w.Write([ConIO]::History()); $w.WriteLine('>>>SNAP')
       } elseif ($verb -eq 'INFO') {
-        $w.WriteLine("OK kind=$Kind workdir=$wd childPid=$childPid alive=$(ChildAlive) transcript=$(Resolve-Transcript)")
+        $tx = Resolve-Transcript
+        if ($tx -and -not (Test-TranscriptPath $tx)) { $tx = '' }
+        $w.WriteLine("OK kind=$Kind workdir=$wd childPid=$childPid alive=$(ChildAlive) transcript=$tx")
       } elseif ($verb -eq 'STAT') {
         $tx = Resolve-Transcript
+        if ($tx -and -not (Test-TranscriptPath $tx)) { $tx = '' }
         $sz = -1; $mt = 0
         if ($tx) {
           try {

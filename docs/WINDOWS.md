@@ -33,17 +33,36 @@ staging exists to serve.
   `winchat` and `winstop` execute real commands on somebody's live machine, with their credentials, in
   a window they are looking at. Treat every one of them the way you would treat `sh` on the user's own
   box: never run one unless the user explicitly asked for it.
-- **The trust boundary is the named pipe.** The pipe name is a random GUID and the broker requires an
-  `AUTH <token>` handshake (256 random bits) before any verb. Both live in a per-broker JSON descriptor
-  at `%ProgramData%\overseer\brokers\<broker>.json`, ACL'd to Administrators, SYSTEM and the console
-  user only. A local process that cannot read that file cannot drive the broker.
-- **Anyone who *can* read the descriptor gets full control** of the hosted agent — that is by design
-  (it is the same set of principals who could already attach to the console). The pipe is not a
-  security boundary against a local administrator.
+- **The broker *is* a console-user process, so the console user is trusted, not sandboxed.** The
+  scheduled task launches the broker with the console user's own token — so anything the broker knows
+  (the pipe name, the auth token), that user's own processes can learn too, and a *fully-malicious*
+  console user can always stand up a look-alike broker and feed the admin SSH client forged responses.
+  This is inherent: overseer drives that user's desktop on their behalf; it cannot also defend the
+  machine against them. They already own their session. What the design **does** protect is the admin
+  SSH client (and any *third*, unprivileged local account) — see the next three points.
+- **The descriptor is split so the console user cannot redirect the control channel.** The pipe name
+  and 256-bit `AUTH` token live in `%ProgramData%\overseer\brokers\<broker>.json`, ACL'd to
+  Administrators/SYSTEM FullControl and the console user **`ReadAndExecute` only**. The per-broker
+  transcript claim — the one thing the broker must write at runtime — lives in a separate
+  `<broker>.state.json` the console user may modify. Because the secret file is read-only to them, a
+  semi-trusted console user can no longer rewrite `Pipe` to point the admin client at a pipe of their
+  own. The server pipe additionally demands `FirstPipeInstance` (a squatter and the real broker cannot
+  coexist), the token is compared case-sensitively and length-first, and the client connects with
+  `TokenImpersonationLevel.Anonymous` so a spoofed broker cannot impersonate the admin's token.
+- **No console-user-supplied value is ever run as admin code or used as a path unchecked.** The
+  transcript path the broker reports is resolved from the console user's own session dirs — an
+  attacker-influenced *name* — so both the broker (`Test-TranscriptPath`) and the controller
+  (`_win_txok`) require an absolute Windows `.jsonl` path free of shell metacharacters before it
+  reaches `scp`. `winshow`'s app name is passed as base64, never interpolated into PowerShell source.
+- **The shared tree is locked down before anything is staged into it.** `%ProgramData%\overseer` and
+  its subdirs are created with an explicit ACL (Administrators/SYSTEM + console-user read, **no
+  `Authenticated Users`**) before the payloads are copied, and each staged `.ps1` gets an
+  inheritance-protected, owner-reset ACL on every launch — so a file a third account pre-planted
+  cannot keep a foothold, and the token-bearing descriptor is never briefly world-readable.
 - **The token never crosses the wire in the clear beyond ssh**, is never logged by the broker, and is
   never printed by any overseer command.
-- `winstop` removes the descriptor and kills the child's whole descendant tree leaf-first, so a stopped
-  broker leaves no live orphan and no reusable credential behind.
+- `winstop` removes both descriptor files and kills the child's whole descendant tree leaf-first, so a
+  stopped broker leaves no live orphan and no reusable credential behind.
 
 ## The shape
 
@@ -195,10 +214,11 @@ a per-broker `flock` on the Linux side, acquired *before* it reads `STAT`, so tw
 cannot interleave keystrokes into the same console or act on a stale busy-check.
 
 Two brokers of the same kind would otherwise fight over the same transcript, so each **claims** one:
-Claude resolves its session id from a descendant-owned `sessions\<pid>.json` (no newest-file fallback),
-and Codex records the `rollout-*.jsonl` it took in its descriptor so a sibling broker skips it. This is
-why the descriptor ACL grants the console user **`Modify`** and not `ReadAndExecute` — with read-only
-rights neither broker can record its claim and both attach to the same rollout.
+Claude resolves its session id from a descendant-owned `sessions\<pid>.json` (no newest-file fallback,
+so no claim file is needed), and Codex records the `rollout-*.jsonl` it took so a sibling broker skips
+it. That claim is written to the broker's **`<broker>.state.json`** — the console-user-`Modify` half of
+the split descriptor — precisely so the secret `<broker>.json` can stay read-only to the console user
+(see the security model). `winlist` skips `*.state.json` when it enumerates descriptors.
 
 ## Verification rule
 
