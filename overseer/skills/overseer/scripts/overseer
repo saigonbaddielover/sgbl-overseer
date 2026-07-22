@@ -83,12 +83,13 @@ main() {
       printf '  hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]  survey the fleet: per host print user@host + online/os/ssh/drive-able (inventory from OVERSEER_HOSTS, ~/.ssh/config, or --tailscale; -u sets the login user for bare hosts)\n'
       printf '  provision [--dry-run] <host>  install the missing Linux drive deps (tmux+jq) on a remote ssh host (needs root/passwordless sudo); fixes a hosts DRIVE=no:tmux/no:jq\n'
       printf '  win   <host>[/name] <verb> [args]  drive a remote WINDOWS console broker over ssh (the win prefix is to Windows what "on <host>" is to remote Linux); e.g. overseer win admin@win-host chat "hi"\n'
-      printf '        win verbs: show start list peek keys sh read chat wait stop\n'
+      printf '        win verbs: show start list peek keys sh read chat send wait quit stop slash menu\n'
       printf '          start [pwsh|claude|codex] [workdir]  start/switch a VISIBLE broker child (/name on the host to run several side by side; see: win <host> list)\n'
       printf '          show  [app]                          open a GUI app (default Windows Terminal) on the VISIBLE console session\n'
       printf '          peek | keys <key|text>... | sh <command> [timeout]  snapshot the screen / send keys or text / run one pwsh command line\n'
-      printf '          chat [--yes] [--force] <prompt|-> [timeout] | wait [timeout] | read  agent broker: send+wait+reply / block the turn / last prompt+reply\n'
-      printf '          stop                                 stop the broker and its child\n'
+      printf '          chat [--yes] [--force] <prompt|-> [timeout] | send [--yes] [--force] <prompt|->  agent broker: send+wait+reply / send+confirm-started (no wait)\n'
+      printf '          wait [timeout] | read | slash </cmd> | menu <item> [nav-key]  block the turn / last prompt+reply / run a slash command / navigate a popup\n'
+      printf '          quit | stop                          exit the agent TUI (keep the broker pwsh) / stop the whole broker and its child\n'
       printf "  ('-' as <msg> reads the message from stdin; any length is pasted, not typed)\n"
       ;;
     *) _die "unknown command: $cmd" ;;
