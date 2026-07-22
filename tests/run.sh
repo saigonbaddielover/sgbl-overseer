@@ -143,6 +143,19 @@ eq "win_split named broker" "win1 overseer-broker-v10"       "$(_split win1/v10)
 eq "win_split name w/ -_"   "win1 overseer-broker-a_b-2"     "$(_split win1/a_b-2)"
 eq "win_split reject punct" "rejected"                       "$(_split 'win1/oops!')"
 eq "win_split reject empty" "rejected"                       "$(_split 'win1/')"
+
+_tx() { _win_txok "$1" && echo ok || echo reject; }
+eq "txok normal claude path"  "ok"     "$(_tx 'C:/Users/ndman/.claude/projects/D--Workspace/a-1.jsonl')"
+eq "txok normal codex path"   "ok"     "$(_tx 'C:/Users/ndman/.codex/sessions/2026/07/21/rollout-x.jsonl')"
+eq "txok username with space" "ok"     "$(_tx 'C:/Users/John Doe/.claude/projects/x/y.jsonl')"
+eq "txok rejects ampersand"   "reject" "$(_tx 'C:/Users/x/rollout-a & calc.jsonl')"
+eq "txok rejects command sub" "reject" "$(_tx 'C:/Users/x/$(calc).jsonl')"
+eq "txok rejects semicolon"   "reject" "$(_tx 'C:/Users/x/a;b.jsonl')"
+eq "txok rejects backtick"    "reject" "$(_tx 'C:/Users/x/a`b`.jsonl')"
+eq "txok rejects non-jsonl"   "reject" "$(_tx 'C:/Users/x/a.txt')"
+eq "txok rejects unix path"   "reject" "$(_tx '/etc/passwd')"
+eq "txok rejects empty"       "reject" "$(_tx '')"
+eq "txok rejects backslash"   "reject" "$(_tx 'C:/Users/x/..\\evil.jsonl')"
 eq "win_split reject nohost" "rejected"                      "$(_split '/v10')"
 
 STAT='kind=claude alive=True size=48213 mtime=1753070000 transcript=C:/Users/u/.claude/projects/D--Workspace/abc-123.jsonl'

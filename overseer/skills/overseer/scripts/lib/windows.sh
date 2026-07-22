@@ -8,15 +8,15 @@ cmd_winshow() {
   [ -f "$ps" ] || _die "missing launcher payload: $ps"
   local boot='$f=Join-Path $env:TEMP "overseer-winshow.ps1"; Set-Content -LiteralPath $f -Value ([Console]::In.ReadToEnd()) -Encoding UTF8; powershell -NoProfile -ExecutionPolicy Bypass -File $f; $e=$LASTEXITCODE; Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; exit $e'
   local bb64; bb64=$(printf '%s' "$boot" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n') || _die "could not encode the launcher bootstrap"
-  local esc="${app//\'/\'\'}"
+  local appb64; appb64=$(printf '%s' "$app" | base64 | tr -d '\n')
   local cmdir="${TMPDIR:-/tmp}/overseer-ssh-$UID"; mkdir -p "$cmdir" 2>/dev/null || true
   local i rc=0 out=''
   for i in 1 2 3; do
     rc=0
     # shellcheck disable=SC2086
-    out=$({ printf "\$App = '%s'\n" "$esc"; cat "$ps"; } \
+    out=$({ printf "\$AppB64 = '%s'\n" "$appb64"; cat "$ps"; } \
       | ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
-        -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$host" "powershell -NoProfile -EncodedCommand $bb64" 2>&1) || rc=$?
+        -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} -- "$host" "powershell -NoProfile -EncodedCommand $bb64" 2>&1) || rc=$?
     [ "$rc" = 255 ] || break
     _nap
   done
@@ -32,7 +32,7 @@ _win_ssh() {
     rc=0
     # shellcheck disable=SC2086
     out=$(${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
-      -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$host" "$cmd" 2>&1) || rc=$?
+      -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} -- "$host" "$cmd" 2>&1) || rc=$?
     [ "$rc" != 255 ] && break
     _nap
   done
@@ -44,15 +44,38 @@ _win_cp() {
   [ -n "${OVERSEER_SSH:-}" ] && via="-S ${OVERSEER_SSH}"
   for i in 1 2 3; do
     # shellcheck disable=SC2086
-    "$scp_bin" $via -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} "$1" "$2" >/dev/null 2>&1 && return 0
+    "$scp_bin" $via -o ConnectTimeout=12 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 ${OVERSEER_SSH_OPTS:-} -- "$1" "$2" >/dev/null 2>&1 && return 0
     _nap
   done
   return 1
 }
+_win_txok() {
+  case "$1" in
+    *[!A-Za-z0-9/:._\ -]*|'') return 1 ;;
+    [A-Za-z]:/*) case "$1" in *.jsonl) return 0 ;; *) return 1 ;; esac ;;
+    *) return 1 ;;
+  esac
+}
 _win_scp() { _win_cp "$2" "$1:$3"; }
 _win_fetch() { _win_cp "$1:$2" "$3"; }
 _win_stage() {
-  _win_ssh "$_WH" 'if not exist "%ProgramData%\overseer\payloads" mkdir "%ProgramData%\overseer\payloads"' >/dev/null
+  local prep b64
+  prep='$ErrorActionPreference="Stop"
+$cu=(Get-CimInstance Win32_ComputerSystem).UserName
+$r=Join-Path $env:ProgramData "overseer"
+foreach($d in @($r,(Join-Path $r "payloads"),(Join-Path $r "brokers"))){
+  New-Item -ItemType Directory -Force -Path $d | Out-Null
+  $a=New-Object System.Security.AccessControl.DirectorySecurity
+  $a.SetAccessRuleProtection($true,$false)
+  foreach($id in @("BUILTIN\Administrators","NT AUTHORITY\SYSTEM")){
+    $a.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($id,"FullControl","ContainerInherit,ObjectInherit","None","Allow")))
+  }
+  if($cu){ $a.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($cu,"ReadAndExecute","ContainerInherit,ObjectInherit","None","Allow"))) }
+  Set-Acl -LiteralPath $d -AclObject $a
+}
+"OK staged"'
+  b64=$(printf '%s' "$prep" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n') || return 1
+  case "$(_win_ssh "$_WH" "powershell -NoProfile -EncodedCommand $b64")" in *"OK staged"*) return 0 ;; *) return 1 ;; esac
 }
 _win_split() {
   _WH="${1%%/*}"
@@ -141,6 +164,7 @@ _win_wait_turn() {
     st=$(_win_call stat)
     [ "$(_win_field "$st" alive)" = False ] && return 3
     tx=$(_win_field "$st" transcript); sig=$(_win_sig "$st")
+    [ -n "$tx" ] && ! _win_txok "$tx" && _die "the broker on $_WH reported an unexpected transcript path ('$tx') — refusing to fetch it (a valid path is an absolute Windows .jsonl under the agent's session dir); peek: overseer winpeek $_WH"
     if [ -n "$tx" ] && [ "$sig" != "$lastsig" ]; then
       lastsig="$sig"
       if _win_fetch "$_WH" "$tx" "$tmp"; then
@@ -158,6 +182,7 @@ _win_agent_ctx() {
   _WKIND=$(_win_field "$st" kind)
   _WTX=$(_win_field "$st" transcript)
   _WSIG=$(_win_sig "$st")
+  [ -n "$_WTX" ] && ! _win_txok "$_WTX" && _die "the broker on $target reported an unexpected transcript path ('$_WTX') — refusing to fetch it; peek: overseer winpeek $target"
   case "$_WKIND" in claude|codex) : ;; *) _die "the broker on $target is hosting '${_WKIND:-?}', not an agent — start one with: overseer winbroker $target claude|codex" ;; esac
   [ "$(_win_field "$st" alive)" = False ] && _die "the broker's agent on $target has exited — restart it: overseer winbroker $target $_WKIND"
   return 0

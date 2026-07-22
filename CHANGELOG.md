@@ -5,6 +5,50 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-22
+
+The security half of the audit, for the remote-Windows transport. The broker runs **as the console
+user**, so a fully-malicious console user can always spoof broker responses — that is inherent to the
+architecture and is now stated plainly in [docs/WINDOWS.md](docs/WINDOWS.md) and `SECURITY.md`. What
+these changes actually close is the path from a *semi-trusted* console user (or a third unprivileged
+local account) to **running code as, or feeding forged paths to, the admin SSH client**. Verified
+live against a real host in both same-account and admin≠console arrangements.
+
+### Security
+
+- **The broker descriptor is split, and its secret half is read-only to the console user.** The
+  descriptor held the pipe name and the auth token in one file that the console user could *write*
+  (it needed write access to record its transcript claim). A console user could therefore rewrite
+  `Pipe` to point the admin client at a pipe of its own and spoof every response — fake `kind=shell`
+  (so `winsh` types into an agent's chat box), fake screen, fake transcript path. The pipe/token now
+  live in `<broker>.json` (Administrators/SYSTEM FullControl, console user **ReadAndExecute** only),
+  and the transcript claim moved to a separate `<broker>.state.json` the console user may write. The
+  console user can no longer redirect the control channel.
+- **A crafted transcript path can no longer reach `scp`.** The broker resolves the transcript from the
+  console user's own session dirs, so its *name* is attacker-influenced by design — a rollout file
+  named `rollout-x' & calc & '.jsonl` used to flow straight into `scp`'s remote-source argument
+  (command execution under legacy scp; arbitrary file read otherwise). Both the controller
+  (`_win_txok`) and the broker (`Test-TranscriptPath`) now require an absolute Windows `.jsonl` path
+  with no shell metacharacters before it is fetched; a spaced username stays valid.
+- **`winshow` no longer interpolates the app name into PowerShell source.** The single-quote escaping
+  was bypassable with a Unicode smart quote (`U+2019`), giving code execution as the SSH admin — the
+  one overseer verb that runs admin-level code. The app name is passed as base64 and decoded in the
+  payload; base64 cannot contain a quote of any kind.
+- **The shared dirs and payload files are locked down before and after staging.** `%ProgramData%\
+  overseer` and its subdirs are created with an explicit ACL (Administrators/SYSTEM + console-user
+  read, **no `Authenticated Users`**) *before* the payloads are copied in, and each staged `.ps1` gets
+  an owner-reset, inheritance-protected ACL on every launch — so a pre-planted file's DACL cannot
+  persist. This also closes the brief window where the token-bearing descriptor inherited a
+  world-readable ACL.
+- **Hardening of the auth and pipe layer:** the token is compared length-first and case-sensitively
+  (`[string]::Equals(..., Ordinal)`, no `-ne`'s case-insensitive base64 collision), the server pipe
+  demands `FirstPipeInstance` (a squatter and the real broker can no longer coexist silently), the
+  client connects with `TokenImpersonationLevel.Anonymous` (a spoofed broker cannot impersonate the
+  admin client's token), broker-name anchors are `\z` not `$` (no trailing-newline match), and every
+  `ssh`/`scp` invocation gained a `--` guard so a host beginning with `-` is not read as an option.
+- **`winstop` and `winlist` account for the split file.** `quit` removes both `<broker>.json` and
+  `<broker>.state.json`; `winlist` skips `*.state.json` so it does not show a phantom broker.
+
 ## [0.14.0] - 2026-07-21
 
 This is the correctness half of a full audit (four independent review passes plus live runs against

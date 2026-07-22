@@ -22,10 +22,14 @@ These are remote execution on somebody's live desktop and deserve the same care 
   command can never be typed into a chat box — but it is otherwise unrestricted.
 - The SSH login must be an **administrator** on the Windows host (registering the interactive
   scheduled task requires it), so a compromised controller key is an admin foothold there.
-- The **trust boundary is the named pipe**: a random GUID name plus a mandatory 256-bit `AUTH` token,
-  both held in a descriptor under `%ProgramData%\overseer\brokers\` ACL'd to Administrators, SYSTEM
-  and the console user. Any local principal able to read that descriptor can fully drive the hosted
-  agent; the pipe is not a boundary against a local administrator. Tokens are never logged or printed.
+- **The broker runs as the console user**, so that user is *trusted*, not sandboxed — a fully-malicious
+  console user can always spoof broker responses (the broker's process is theirs). What overseer
+  protects is the admin SSH client and any third, unprivileged local account. The pipe name and 256-bit
+  `AUTH` token live in `%ProgramData%\overseer\brokers\<broker>.json`, ACL'd to Administrators/SYSTEM
+  and the console user **read-only**; the runtime transcript claim is a separate console-user-writable
+  `<broker>.state.json`, so the console user cannot rewrite the pipe to hijack the control channel. No
+  console-user-supplied value (transcript path, `winshow` app) is ever run as admin code or fed to
+  `scp` unchecked; the shared tree is ACL-locked before staging. Tokens are never logged or printed.
 
 See [docs/WINDOWS.md](docs/WINDOWS.md) for the full prerequisites and security model.
 

@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 function Get-ConfigPath($broker) {
-  if ($broker -notmatch '^overseer-broker(?:-[0-9A-Za-z_-]+)?$') { throw "invalid broker '$broker'" }
+  if ($broker -notmatch '^overseer-broker(?:-[0-9A-Za-z_-]+)?\z') { throw "invalid broker '$broker'" }
   return (Join-Path (Join-Path $env:ProgramData 'overseer\brokers') "$broker.json")
 }
 function Get-Config($broker) {
@@ -22,7 +22,7 @@ function Get-Config($broker) {
   return $config
 }
 function Connect-Broker($config) {
-  $client = New-Object System.IO.Pipes.NamedPipeClientStream('.', $config.Pipe, [System.IO.Pipes.PipeDirection]::InOut)
+  $client = New-Object System.IO.Pipes.NamedPipeClientStream('.', $config.Pipe, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::None, [System.Security.Principal.TokenImpersonationLevel]::Anonymous)
   try { $client.Connect(5000) } catch { try { $client.Dispose() } catch {}; throw 'connect failed' }
   $reader = New-Object System.IO.StreamReader($client)
   $writer = New-Object System.IO.StreamWriter($client); $writer.AutoFlush = $true
@@ -59,7 +59,7 @@ function Label($broker) {
 function Invoke-List {
   $dir = Join-Path $env:ProgramData 'overseer\brokers'
   if (-not (Test-Path -LiteralPath $dir)) { 'none'; return }
-  $files = @(Get-ChildItem -LiteralPath $dir -Filter 'overseer-broker*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+  $files = @(Get-ChildItem -LiteralPath $dir -Filter 'overseer-broker*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '\.state\.json\z' } | Sort-Object Name)
   if (-not $files) { 'none'; return }
   foreach ($file in $files) {
     $broker = [IO.Path]::GetFileNameWithoutExtension($file.Name)
@@ -78,6 +78,7 @@ function Invoke-Client {
   if ($Op -eq 'list') { Invoke-List; return }
   if ($Op -eq 'quit') {
     $configPath = Get-ConfigPath $Broker
+    $statePath = $configPath -replace '\.json\z', '.state.json'
     if (-not (Test-Path -LiteralPath $configPath)) { throw "broker '$Broker' not found" }
     try {
       $connection = Connect-Broker (Get-Config $Broker)
@@ -85,7 +86,7 @@ function Invoke-Client {
     } catch {
       "OK quit (broker was already gone: $($_.Exception.Message))"
     }
-    Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $configPath, $statePath -Force -ErrorAction SilentlyContinue
     return
   }
   $config = Get-Config $Broker

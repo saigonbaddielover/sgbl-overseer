@@ -1,5 +1,9 @@
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
+if ($AppB64) {
+  try { $App = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($AppB64)) }
+  catch { Write-Output 'ERR invalid app encoding'; exit 2 }
+}
 if (-not $App) { $App = 'Terminal' }
 $task = 'overseer-winshow'
 
