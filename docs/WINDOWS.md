@@ -21,7 +21,7 @@ On the **Windows target**:
 | OpenSSH server | running and reachable; key-based auth recommended |
 | SSH identity | must be an **administrator** — registering the interactive scheduled task requires it |
 | PowerShell 7 (`pwsh.exe`) | on `PATH`; the broker is hosted by `pwsh`, not `powershell.exe` |
-| A logged-in console user | somebody must be signed in at the physical/RDP console (Session 1). Locked is fine, logged off is not — `winshow`/`winbroker` fail with a clear error |
+| A logged-in console user | somebody must be signed in at the physical/RDP console (Session 1). Locked is fine, logged off is not — `win <host> show`/`win <host> start` fail with a clear error |
 | The agent itself | `claude` / `codex` installed **for the console user**, authenticated in *their* PowerShell profile (see [Host environment](#host-environment)) |
 
 The SSH admin and the console user may be different accounts; that is the topology `%ProgramData%`
@@ -29,8 +29,8 @@ staging exists to serve.
 
 ## Security model
 
-- **Everything runs as the console user, on their visible desktop.** `winbroker`, `winkeys`, `winsh`,
-  `winchat` and `winstop` execute real commands on somebody's live machine, with their credentials, in
+- **Everything runs as the console user, on their visible desktop.** `win <host> start`, `keys`, `sh`,
+  `chat` and `stop` execute real commands on somebody's live machine, with their credentials, in
   a window they are looking at. Treat every one of them the way you would treat `sh` on the user's own
   box: never run one unless the user explicitly asked for it.
 - **The broker *is* a console-user process, so the console user is trusted, not sandboxed.** The
@@ -53,7 +53,7 @@ staging exists to serve.
   transcript path the broker reports is resolved from the console user's own session dirs — an
   attacker-influenced *name* — so both the broker (`Test-TranscriptPath`) and the controller
   (`_win_txok`) require an absolute Windows `.jsonl` path free of shell metacharacters before it
-  reaches `scp`. `winshow`'s app name is passed as base64, never interpolated into PowerShell source.
+  reaches `scp`. `win <host> show`'s app name is passed as base64, never interpolated into PowerShell source.
 - **The shared tree is locked down before anything is staged into it.** `%ProgramData%\overseer` and
   its subdirs are created with an explicit ACL (Administrators/SYSTEM + console-user read, **no
   `Authenticated Users`**) before the payloads are copied, and each staged `.ps1` gets an
@@ -61,14 +61,14 @@ staging exists to serve.
   cannot keep a foothold, and the token-bearing descriptor is never briefly world-readable.
 - **The token never crosses the wire in the clear beyond ssh**, is never logged by the broker, and is
   never printed by any overseer command.
-- `winstop` removes both descriptor files and kills the child's whole descendant tree leaf-first, so a
-  stopped broker leaves no live orphan and no reusable credential behind.
+- `win <host> stop` removes both descriptor files and kills the child's whole descendant tree leaf-first,
+  so a stopped broker leaves no live orphan and no reusable credential behind.
 
 ## The shape
 
 ```
 Linux                         │ Windows host
-overseer winchat host/name ── ssh ──▶ win-client.ps1  (Session 0, one-shot per turn)
+overseer win host/name chat ── ssh ──▶ win-client.ps1  (Session 0, one-shot per turn)
                                           │ reads %ProgramData%\overseer\brokers\<broker>.json
                                           │ named pipe \\.\pipe\overseer-<guid>, after AUTH <token>
                                           ▼
@@ -89,11 +89,11 @@ and the pipe protocol exposes the same two primitives tmux gives us on Linux.
 | — | `STAT` / `INFO` | transcript path, size, mtime, liveness |
 
 `SNAP` reads the visible window; `SNAPALL` reads the whole screen buffer, which the broker grows to
-9999 rows at startup. Without that, the buffer is only as tall as the window and `winsh` output longer
+9999 rows at startup. Without that, the buffer is only as tall as the window and `win <host> sh` output longer
 than a screenful **destroys** its opening sentinel rather than scrolling it — reported as a false
 timeout.
 
-`ReadConsoleOutputCharacter` returns the **already-rendered character grid**, so `winpeek` and the
+`ReadConsoleOutputCharacter` returns the **already-rendered character grid**, so `win <host> peek` and the
 awaiting-prompt detector work with no VT emulator on either side. That is the reason this approach was
 chosen over a ConPTY relay.
 
@@ -130,8 +130,8 @@ Cross-session consequences worth knowing:
   (verified `client_sid=0 ↔ server_sid=1`). This is the only part of the design that crosses the
   boundary, and it does so by construction rather than by privilege.
 - `MainWindowHandle` is **0 for every process** when queried from Session 0, so window-handle detection
-  is useless cross-session. `winshow` reports success by observing a new process in the console session
-  instead.
+  is useless cross-session. `win <host> show` reports success by observing a new process in the console
+  session instead.
 - `wt.exe` is an app-execution-alias stub; launching it directly exits without activating anything.
   Packaged apps must be started by AUMID via
   `explorer.exe shell:AppsFolder\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App`.
@@ -143,7 +143,7 @@ is not evidence, because a mangled prompt can still *look* plausible in the grid
 
 - **A raw `ESC` byte is never delivered to the child.** Bracketed paste (`ESC[200~` … `ESC[201~`) is
   therefore impossible: the agent receives the literal text `[200~`. v0.9.0 shipped with exactly this
-  bug and passed CI — only `winread` exposed it.
+  bug and passed CI — only `win <host> read` exposed it.
 - **A `\r`/`\n` char event with `wVirtualKeyCode = 0` is swallowed.** Newlines vanish and every line of
   a multi-line prompt runs together into one.
 - **`Ctrl+J` (`vk=0x4A, uc=0x0A, ctrl=0x0008`) is what actually inserts a composer line break** — in
@@ -176,8 +176,8 @@ is not evidence, because a mangled prompt can still *look* plausible in the grid
 - **`$pid` is a read-only automatic variable** — assigning it (e.g. as a loop variable) is a runtime
   error the parser will not catch. `tests/win-contracts.ps1` asserts no payload does.
 - A `List[int]` returned from a PowerShell function is **unrolled to `Object[]`**, which has no
-  `.Reverse()`. `winstop` iterates by descending index instead; killing parent-first took the broker
-  down before it reached the agent, orphaning it.
+  `.Reverse()`. `win <host> stop` iterates by descending index instead; killing parent-first took the
+  broker down before it reached the agent, orphaning it.
 - PowerShell 7 lacks the 8-argument `NamedPipeServerStream` constructor. Use
   `NamedPipeServerStreamAcl::Create` when the type exists and fall back to the constructor otherwise.
 - `GetFinalPathNameByHandle` **blocks forever** on a pipe handle. Any handle sweep must filter on
@@ -195,7 +195,7 @@ environment variables or any settings file; launching without the profile makes 
 its default auth and reply `Not logged in`.
 
 **The command name itself is per-host**, so it is injected, not hardcoded: `OVERSEER_WIN_CLAUDE` and
-`OVERSEER_WIN_CODEX` on the controller (defaults `claude` / `codex`) name what `winbroker` runs there.
+`OVERSEER_WIN_CODEX` on the controller (defaults `claude` / `codex`) name what `win <host> start` runs there.
 A host whose users go through a wrapper — `claudeep` rather than `claude`, say — needs
 `OVERSEER_WIN_CLAUDE=claudeep`, and gets the same `Not logged in` reply if it does not. The value is
 restricted to a bare command name, travels base64-encoded, and is decoded into a parameter rather than
@@ -208,7 +208,7 @@ the profile, and whether that host uses a differently-named command.
 ## Concurrency
 
 Multiple brokers coexist on one host, addressed as `<host>/<name>` (descriptor
-`overseer-broker-<name>.json`; the bare `<host>` form is `overseer-broker.json`). `winlist` enumerates
+`overseer-broker-<name>.json`; the bare `<host>` form is `overseer-broker.json`). `win <host> list` enumerates
 **descriptors**, not `\\.\pipe\` entries — the pipe names are random. Every box-mutating command takes
 a per-broker `flock` on the Linux side, acquired *before* it reads `STAT`, so two overseer invocations
 cannot interleave keystrokes into the same console or act on a stale busy-check.
@@ -218,7 +218,7 @@ Claude resolves its session id from a descendant-owned `sessions\<pid>.json` (no
 so no claim file is needed), and Codex records the `rollout-*.jsonl` it took so a sibling broker skips
 it. That claim is written to the broker's **`<broker>.state.json`** — the console-user-`Modify` half of
 the split descriptor — precisely so the secret `<broker>.json` can stay read-only to the console user
-(see the security model). `winlist` skips `*.state.json` when it enumerates descriptors.
+(see the security model). `win <host> list` skips `*.state.json` when it enumerates descriptors.
 
 ## Verification rule
 
@@ -238,5 +238,5 @@ identical scripts.
 `tests/win-flow.sh` covers the bash side with the two remote chokepoints mocked.
 
 That is still not enough. Anything touching delivery, key encoding, or transcript resolution must also
-be verified by driving a real Windows host **and reading back what the agent recorded** with `winread`,
+be verified by driving a real Windows host **and reading back what the agent recorded** with `win <host> read`,
 not by looking at the screen — the v0.9.0 regression rendered plausibly and was wrong.

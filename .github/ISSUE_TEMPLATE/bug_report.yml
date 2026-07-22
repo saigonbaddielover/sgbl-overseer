@@ -45,10 +45,10 @@ body:
   - type: textarea
     id: windows
     attributes:
-      label: Windows target details (only for a `win*` bug)
+      label: Windows target details (only for a `win <host> <verb>` bug)
       description: |
         Windows build (`winver`), `pwsh --version`, whether the SSH login and the console user are the
-        same account, and the output of `overseer winlist <host>`.
+        same account, and the output of `overseer win <host> list`.
         **Redact host names, user names and IPs — and never paste a broker descriptor: it holds the auth token.**
       render: text
   - type: textarea

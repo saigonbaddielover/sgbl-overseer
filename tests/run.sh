@@ -216,7 +216,7 @@ eq "undelivered keeps the plain error with no menu"   "could not place/verify me
 eq "win undelivered names the question when a menu is up" "yes" \
    "$(case "$(_undeliv _win_undelivered win/two)" in *'not sent'*'win/two'*'❯ 1. yes'*) echo yes ;; *) echo no ;; esac)"
 eq "win undelivered keeps the plain error with no menu"   "yes" \
-   "$(_win_awaiting() { return 1; }; case "$(_win_undelivered win/two)" in *'could not place/verify the prompt'*'winpeek win/two'*) echo yes ;; *) echo no ;; esac)"
+   "$(_win_awaiting() { return 1; }; case "$(_win_undelivered win/two)" in *'could not place/verify the prompt'*'win win/two peek'*) echo yes ;; *) echo no ;; esac)"
 
 eq "is_shell bash"         "0"                         "$(_is_shell bash; echo $?)"
 eq "is_shell login -zsh"   "0"                         "$(_is_shell -zsh; echo $?)"
@@ -282,6 +282,13 @@ for surface in help README SKILL; do
   eq "$surface documents no command that does not exist" "" "$(printf '%s' "$extra" | sed 's/ *$//')"
 done
 
+WINLIB="$HERE/../overseer/skills/overseer/scripts/lib/windows.sh"
+_win_verbs_dispatch() { sed -nE 's/^[[:space:]]+([a-z]+)\)[[:space:]]+_win_.*/\1/p' "$WINLIB" | sort -u; }
+_win_verbs_help()     { bash "$ENTRY" --help 2>/dev/null | sed -nE 's/^[[:space:]]+win verbs:[[:space:]]*(.*)/\1/p' | tr ' ' '\n' | sed '/^$/d' | sort -u; }
+eq "win dispatcher verbs are non-empty" "yes" "$([ -n "$(_win_verbs_dispatch)" ] && echo yes || echo no)"
+eq "help win verbs match the cmd_win dispatcher" "" \
+   "$(comm -3 <(_win_verbs_dispatch) <(_win_verbs_help) | tr -d '\t' | tr '\n' ' ' | sed 's/ *$//')"
+
 WINDOC="$HERE/../docs/WINDOWS.md"
 SECDOC="$HERE/../SECURITY.md"
 CONTRIB="$HERE/../CONTRIBUTING.md"
@@ -291,7 +298,7 @@ _has() { grep -qF "$2" "$1" && echo yes || echo no; }
 _hasre() { grep -qE "$2" "$1" && echo yes || echo no; }
 
 eq "README states the Linux controller / Windows target support model" "yes" "$(_hasre "$README" '^## Support model')"
-eq "SKILL frontmatter names the Windows broker commands" "yes" "$(sed -n '2p' "$SKILL" | grep -qE 'winbroker.*winchat|winchat.*winbroker' && echo yes || echo no)"
+eq "SKILL frontmatter names the Windows broker commands" "yes" "$(sed -n '2p' "$SKILL" | grep -qE 'win <host>.*(start|chat)' && echo yes || echo no)"
 eq "SKILL scope section covers both target kinds" "yes" "$(_hasre "$SKILL" '^## Scope: what runs where')"
 for v in OVERSEER_REMOTE_DIR OVERSEER_REMOTE_BIN OVERSEER_SSH OVERSEER_SSH_OPTS OVERSEER_SCP OVERSEER_WIN_CLAUDE OVERSEER_WIN_CODEX OVERSEER_TIMEOUT OVERSEER_POLL_INTERVAL; do
   eq "README documents $v" "yes" "$(_has "$README" "$v")"
@@ -308,8 +315,8 @@ eq "README links the Windows doc" "yes" "$(_has "$README" 'docs/WINDOWS.md')"
 eq "SKILL links the Windows doc" "yes" "$(_has "$SKILL" 'docs/WINDOWS.md')"
 eq "Windows doc has a prerequisites section" "yes" "$(_hasre "$WINDOC" '^## Prerequisites')"
 eq "Windows doc has a security model section" "yes" "$(_hasre "$WINDOC" '^## Security model')"
-eq "SECURITY covers the Windows commands" "yes" "$(_has "$SECDOC" 'winbroker')"
-eq "SKILL safety rules cover the win* commands" "yes" "$(_hasre "$SKILL" '^## Safety rules for .*win\*')"
+eq "SECURITY covers the Windows commands" "yes" "$(_has "$SECDOC" 'win <host> start')"
+eq "SKILL safety rules cover the win commands" "yes" "$(_hasre "$SKILL" '^## Safety rules for .*win <host>')"
 eq "CONTRIBUTING has the Windows live-verification checklist" "yes" "$(_hasre "$CONTRIB" '^### Windows live verification')"
 eq "CONTRIBUTING documents the Windows contract tests" "yes" "$(_has "$CONTRIB" 'tests/win-contracts.ps1')"
 eq "CONTRIBUTING documents the local PowerShell runner" "yes" "$(_has "$CONTRIB" 'OVERSEER_PWSH')"
@@ -317,8 +324,8 @@ eq "Windows doc points at the local PowerShell runner" "yes" "$(_has "$WINDOC" '
 eq "Windows doc names the CI parse script" "yes" "$(_has "$WINDOC" 'tests/win-parse.ps1')"
 eq "CI runs the windows payload scripts natively" "yes" "$(_has "$HERE/../.github/workflows/validate.yml" './tests/win-parse.ps1')"
 eq "PR template requires the Windows payload run" "yes" "$(_has "$PRTPL" 'tests/win-payloads.sh')"
-eq "README walkthrough shows the broker lifecycle" "yes" "$(_hasre "$README" 'overseer winstop')"
-eq "SKILL walkthrough shows the broker lifecycle" "yes" "$(_hasre "$SKILL" 'overseer winstop')"
+eq "README walkthrough shows the broker lifecycle" "yes" "$(_hasre "$README" 'overseer win .* stop')"
+eq "SKILL walkthrough shows the broker lifecycle" "yes" "$(_hasre "$SKILL" 'overseer win .* stop')"
 
 _poll() { OVERSEER_POLL_INTERVAL="$1" bash "$ENTRY" --help >/dev/null 2>&1 && echo ok || echo rejected; }
 for good in 0.25 1 1.0 .5 2.5; do

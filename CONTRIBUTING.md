@@ -101,13 +101,13 @@ Static checks and the Linux jobs cannot see the Windows path — see the verific
 [docs/WINDOWS.md](docs/WINDOWS.md). **If your change touches `windows.sh` or any `win-*.ps1`**, run
 against a real Windows host and tick these in the PR:
 
-- [ ] `winbroker <host> claude` and `winbroker <host>/two codex` — both paint, both appear in `winlist`
-- [ ] a **multi-line** `winchat`, then `winread` — the transcript shows the exact prompt, not a
-      run-together one line
+- [ ] `win <host> start claude` and `win <host>/two start codex` — both paint, both appear in `win <host> list`
+- [ ] a **multi-line** `win <host> chat`, then `win <host> read` — the transcript shows the exact prompt,
+      not a run-together one line
 - [ ] two brokers of the same kind own **different** transcripts
 - [ ] abort a confirmation and prove the composer is left clear
-- [ ] `winsh` with output **taller than the window** returns output + exit code, not a timeout
-- [ ] `winstop` leaves no descendant process and no descriptor behind
+- [ ] `win <host> sh` with output **taller than the window** returns output + exit code, not a timeout
+- [ ] `win <host> stop` leaves no descendant process and no descriptor behind
 
 ## Contribution flow
 
