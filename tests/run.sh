@@ -125,6 +125,12 @@ eq "ts-hosts: ips, all os" "100.0.0.1
 100.0.0.2" "$(printf '# Health:\n100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts '')"
 eq "ts-hosts: filter by os" "100.0.0.2" "$(printf '100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts windows)"
 eq "ts-hosts: ignores non-peer lines" "100.0.0.1" "$(printf 'Health check:\n  - some warning\n100.0.0.1 sandbox u linux active\n' | _ts_hosts '')"
+eq "provision: --dry-run threads DRY=1" "yes" "$(_provision_script 1 | grep -qx 'DRY=1' && echo yes || echo no)"
+eq "provision: defaults to DRY=0"       "yes" "$(_provision_script | grep -qx 'DRY=0' && echo yes || echo no)"
+eq "provision: targets tmux and jq"     "yes" "$(_provision_script 0 | grep -q 'for c in tmux jq' && echo yes || echo no)"
+eq "provision: knows apt and dnf"       "2"   "$(_provision_script 0 | grep -cE 'apt-get install -y|dnf install -y')"
+eq "provision: sudo -n when not root"   "yes" "$(_provision_script 0 | grep -q 'sudo -n' && echo yes || echo no)"
+eq "provision: refuses non-Linux"       "yes" "$(_provision_script 0 | grep -q 'not Linux' && echo yes || echo no)"
 
 _startgate() {
   ( _need() { :; }; _nap() { :; }

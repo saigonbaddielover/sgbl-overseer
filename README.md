@@ -96,6 +96,7 @@ All work goes through one script; the agent calls it as
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
 | `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
 | `hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]` | **Remote (SSH), fleet survey.** Print one line per host — `HOST ONLINE OS SSH DRIVE`, where `HOST` is the **effective `user@host`** — so you can see which machines you can actually drive, *and as which user*, before an `on`/`win*`. The inventory (ssh targets to probe) comes from `$OVERSEER_HOSTS` if set, else `$XDG_CONFIG_HOME/overseer/hosts`, else the non-wildcard `Host` entries of `~/.ssh/config`; or pass `--tailscale` to enumerate the tailnet directly (`--os windows`/`linux` filters it) for machines you never added to ssh config. **The login user** for a bare host (no `user@`) is resolved from `ssh -G` — so an ssh-config `Host … User fleetuser` block is honoured and shown — or forced with `-u USER` / `$OVERSEER_HOSTS_USER` when it lives nowhere (the common "same user across the whole fleet" case). Each host is probed **live and in parallel**: `SSH` is `ok`/`deny`/`unreach`, `OS` is `linux`/`windows`/`macos`, `DRIVE` is `yes` (Linux with `tmux`+`jq`), `no:tmux`/`no:jq`, or `win*` (a Windows broker target). `ONLINE` is filled from `tailscale status` when the CLI is present. Nothing is stored — reachability is computed each run (a cached health value would just be stale). `--list` prints the inventory without probing; `-t` sets the per-host ssh connect timeout (default 6s). |
+| `provision [--dry-run] <host>` | **Remote (SSH).** Install the missing Linux **drive** dependencies (`tmux` + `jq`) on a reachable host — the fix for a `hosts` `DRIVE=no:tmux`/`no:jq`. Detects the package manager (`apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk`), installs only what's absent (idempotent), and needs **root or passwordless `sudo`** on the host (it runs non-interactively). `--dry-run` prints the exact command instead of running it. Linux only, and only the base deps — Claude/Codex agents (and every Windows prerequisite) are still set up by hand. |
 | `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host (re-run to update). |
 | `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
 | `winshow <host> [app]` | **Remote (SSH), Windows target.** Open a GUI app — default Windows Terminal, or any Start-menu name / AUMID / full exe path — on the **visible console session** of a remote Windows host. Bridges SSH's Session 0 to the logged-in desktop via a transient interactive scheduled task, so the window appears on the physical screen; resolves the console user dynamically, runs even on battery, and confirms a new top-level window appeared. e.g. `winshow admin@win-host`, `winshow win-host 'Notepad'`. |
@@ -184,6 +185,35 @@ traps: a laptop **on battery** (default tasks carry `DisallowStartIfOnBatteries`
 and never launch — `winshow` disables that) and Windows Terminal's **app-execution-alias** stub (launched
 by AUMID via `explorer.exe shell:AppsFolder\…`, not a direct `CreateProcess`). It errors clearly if no
 user is at the console (locked / logged off). Needs an admin ssh login on the Windows host.
+
+### Surveying the fleet and fixing what's missing
+
+`overseer hosts` prints one line per host — `HOST ONLINE OS SSH DRIVE`, where `HOST` is the effective
+`user@host` (the login user resolved from `ssh -G`, or forced with `-u`). It answers two separate
+questions — *can I reach it* (`SSH`) and *can I drive it* (`DRIVE`) — and each value tells you what to do:
+
+**`SSH`** — reaching the host over ssh:
+
+| Value | Means | Fix |
+|---|---|---|
+| **ok** | connected and ran a command | — |
+| **deny** | reached sshd, auth rejected | wrong user or key. Set the right `User`/`IdentityFile` in `~/.ssh/config`, or pass `-u USER` / `user@host`; make sure your key is authorized on the host. |
+| **hostkey** | reached, host key not trusted yet | accept it once (`ssh <host>` interactively, or add `StrictHostKeyChecking accept-new` to the host's ssh-config block). |
+| **unreach** | no answer within the timeout | check the host is up and on the tailnet/LAN, that `sshd` is running, and the address is right; raise `-t` if the link is slow. |
+
+**`DRIVE`** — what overseer can actually do once `SSH=ok`:
+
+| Value | Means | Fix |
+|---|---|---|
+| **yes** | Linux with `tmux`+`jq` — fully driveable (shell + agents) | — |
+| **no:tmux** / **no:jq** | Linux missing a base dependency | **`overseer provision <host>`** installs them (needs root/passwordless sudo); then re-survey. |
+| **win\*** | a reachable Windows host | use the `win*` commands; needs an **admin** login, a **logged-in console user**, and the broker prerequisites in [docs/WINDOWS.md](docs/WINDOWS.md). |
+| **no:macos** | a Mac | not a controller (see [docs/PORTING.md](docs/PORTING.md)); not a tmux drive target. |
+| **-** | `SSH` wasn't `ok` | fix the `SSH` column first. |
+
+So the usual loop is: `hosts` → see a `no:tmux`/`no:jq` → `provision <host>` → `hosts` again. `provision`
+only handles the Linux base deps; Claude/Codex agents and every Windows prerequisite are still installed
+by hand (agents vary too much per host to script safely).
 
 ## How it works
 

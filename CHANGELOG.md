@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-22
+
+### Added
+
+- **`provision <host>` — install a Linux host's missing drive dependencies.** The fix for a `hosts`
+  `DRIVE=no:tmux`/`no:jq`: it ssh's in, detects which of `tmux`/`jq` is absent, picks the package
+  manager (`apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk`), and installs only what's missing (idempotent — a
+  host that already has both is a no-op). Runs non-interactively, so it needs **root or passwordless
+  `sudo`** on the host and says so clearly when it has neither. `--dry-run` prints the exact command
+  instead of running it. Scoped to the Linux base deps on purpose — Claude/Codex agents and every
+  Windows prerequisite (admin login, a logged-in console user, the broker payloads) are still set up by
+  hand, because they vary too much per host to script safely. The remote snippet is built by the pure
+  `_provision_script`, fixture-tested in `tests/run.sh`.
+
+### Documentation
+
+- **How to handle every `hosts` `SSH` and `DRIVE` value.** README gains a "Surveying the fleet and
+  fixing what's missing" section with a remediation table for each state — `SSH` `deny`/`hostkey`/
+  `unreach` and `DRIVE` `no:tmux`/`no:jq`/`win*`/`no:macos`/`-` — and SKILL carries the compact version,
+  so the survey → `provision` → re-survey loop is spelled out.
+
 ## [0.19.1] - 2026-07-22
 
 ### Changed

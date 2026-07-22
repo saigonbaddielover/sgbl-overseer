@@ -540,3 +540,19 @@ cmd_hosts() {
   for t in "${targets[@]}"; do cat "$tmp/$i" 2>/dev/null; i=$((i + 1)); done
   rm -rf "$tmp" 2>/dev/null || true
 }
+cmd_provision() {
+  _need ssh
+  local dry=0
+  while :; do case "${1:-}" in
+    --dry-run) dry=1; shift ;;
+    -*) _die "unknown flag '$1' (usage: overseer provision [--dry-run] <host>)" ;;
+    *) break ;;
+  esac; done
+  local host="${1:-}"
+  [ -n "$host" ] || _die "usage: overseer provision [--dry-run] <host>   (install the missing Linux drive deps tmux+jq on a remote ssh host; needs root or passwordless sudo. Agents/Windows deps are set up manually)"
+  local out rc
+  # shellcheck disable=SC2086
+  if out=$(_provision_script "$dry" | ${OVERSEER_SSH:-ssh} -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" 'sh -s' 2>&1); then rc=0; else rc=$?; fi
+  printf '%s: %s\n' "$host" "$out"
+  return "$rc"
+}
