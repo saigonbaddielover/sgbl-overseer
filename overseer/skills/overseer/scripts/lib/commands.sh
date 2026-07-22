@@ -251,6 +251,58 @@ cmd_quit() {
   done
   _die "sent Ctrl-C but pane $pane still shows '$now' (peek it — maybe mid-turn or a dialog is open)"
 }
+cmd_start() {
+  _need tmux
+  local name="${1:-}" child="${2:-shell}" workdir="${3:-}"
+  [ -n "$name" ] || _die "usage: overseer start <name> [shell|claude|codex] [workdir]"
+  _ok_session_name "$name" || _die "invalid session name '$name' (letters, digits, '_' or '-' only; tmux forbids ':' and '.')"
+  case "$child" in shell|claude|codex) : ;; *) _die "child must be shell, claude or codex (got '$child')" ;; esac
+  tmux has-session -t "=$name" 2>/dev/null && _die "session '$name' already exists — stop it first (overseer stop $name) or pick another name"
+  [ -n "$workdir" ] && [ ! -d "$workdir" ] && _die "workdir does not exist: $workdir"
+  local -a nsargs=(new-session -d -s "$name" -x 200 -y 50)
+  [ -n "$workdir" ] && nsargs+=(-c "$workdir")
+  tmux "${nsargs[@]}" 2>/dev/null || _die "could not create tmux session '$name'"
+  local pane; pane=$(tmux list-panes -t "=$name" -F '#{pane_id}' 2>/dev/null | head -1)
+  [ -n "$pane" ] || _die "session '$name' created but has no pane"
+  if [ "$child" = shell ]; then
+    printf 'started shell session %s (%s)%s\nwatch: tmux attach -t %s   drive: overseer sh %s <command>\n' \
+      "$name" "$pane" "${workdir:+ in $workdir}" "$name" "$name"
+    return 0
+  fi
+  tmux send-keys -t "$pane" -l "$child"
+  tmux send-keys -t "$pane" Enter
+  local pp deadline ready=''
+  pp=$(tmux display-message -p -t "$pane" '#{pane_pid}' 2>/dev/null)
+  deadline=$((SECONDS + 30))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    [ "$(_harness_of "$pp" 2>/dev/null)" = "$child" ] && { ready=1; break; }
+    _nap
+  done
+  [ -n "$ready" ] || _die "session '$name' ($pane) is up but $child has not appeared after 30s — peek it (overseer peek $name); is $child installed / did it error?"
+  printf 'started %s session %s (%s)%s\nwatch: tmux attach -t %s   drive: overseer chat %s <message>\n' \
+    "$child" "$name" "$pane" "${workdir:+ in $workdir}" "$name" "$name"
+}
+cmd_stop() {
+  _need tmux
+  local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer stop <pane|session>"
+  case "$target" in
+    %[0-9]*)
+      local pane; pane=$(_resolve_pane "$target") || _die "no tmux pane for target: $target"
+      [ -n "${TMUX_PANE:-}" ] && [ "$TMUX_PANE" = "$pane" ] && _die "refusing to kill the pane overseer is running in ($pane) — run stop from outside it"
+      tmux kill-pane -t "$pane" 2>/dev/null || _die "could not kill pane $pane"
+      printf 'stopped pane %s\n' "$pane"
+      ;;
+    *)
+      tmux has-session -t "=$target" 2>/dev/null || _die "no tmux session named '$target' (see: overseer list --all; to kill one pane target its %N)"
+      if [ -n "${TMUX_PANE:-}" ]; then
+        local mysess; mysess=$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null)
+        [ "$mysess" = "$target" ] && _die "refusing to kill the session '$target' — overseer is running inside it (would cut this session); run stop from outside, or target a specific pane %N"
+      fi
+      tmux kill-session -t "=$target" 2>/dev/null || _die "could not kill session '$target'"
+      printf 'stopped session %s\n' "$target"
+      ;;
+  esac
+}
 # invoke a Claude slash command in a pane (/resume, /clear, /model, ...). send/chat can't: they
 # prepend a space so a leading / stays literal text; this types it AS a command and submits. commands
 # that open a menu (/resume, /model) then need keys + peek to navigate (Up/Down, Enter, Esc).

@@ -8,12 +8,12 @@ turn-based, from outside them: in **Linux tmux panes** (local or over ssh) and i
 console windows** on a remote machine's visible desktop. Packaged as a
 [Claude Code plugin](https://code.claude.com/docs/en/plugins).
 
-On Linux, overseer **attaches to a session someone else already started**: it discovers a tmux pane
-that is already running Claude Code, Codex or a shell, then reads and drives it turn-based — it never
-opens a pane or launches a harness for you. (The one exception is `winbroker`, which *does* start the
-child, because a Windows host has no tmux pane to find.) Today it speaks **Claude Code** and **Codex**
-(plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect which harness a pane runs. It's built
-so more harnesses can be added behind the same commands.
+On Linux, overseer both **drives sessions someone else started** and **starts/stops its own**: `list`
+discovers a tmux pane already running Claude Code, Codex or a shell and reads/drives it turn-based, while
+`start` opens a fresh **detached** tmux session running a shell or agent and `stop` tears one down. (On a
+Windows host — which has no tmux pane to find — `winbroker`/`winstop` are the equivalent pair.) Today it
+speaks **Claude Code** and **Codex** (plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect
+which harness a pane runs. It's built so more harnesses can be added behind the same commands.
 
 A running agent TUI has no API — its only input channel is the keyboard. `overseer` wraps a
 deterministic, self-verifying `tmux send-keys` / `capture-pane` procedure (plus transcript reading) so
@@ -87,6 +87,8 @@ All work goes through one script; the agent calls it as
 | `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes — or return early if the agent stops at a prompt awaiting input. |
 | `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (no subcommand = `status`). `status` = one line each (harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for a started-but-unused agent and `(not an agent)` for a pane that stopped being one); `read`; `wait [timeout]`; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes. A thin fan-out over the per-pane commands — each pane keeps its own guards, and one failing pane never aborts the batch. |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
+| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session named `<name>` running a shell (default), Claude Code or Codex; for an agent it waits until the harness has actually come up before returning. Watch it with `tmux attach -t <name>`, then drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name that isn't `[A-Za-z0-9_-]` or one already in use. |
+| `stop <target>` | **Delete (Linux tmux).** Tear down what `start` made (or any tmux target): a `%N` pane → `kill-pane` (that one pane); a session name → `kill-session` (the whole session), which SIGHUPs its child agent/shell. Refuses to kill the session overseer itself is running in. The Linux peer of `winstop`. |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. The leading `/` is optional — `slash <target> resume` works too. |
 | `menu <target> <item> [nav-key]` | **Any pane.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Default nav key `Right` suits a Claude tab bar; Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
@@ -136,7 +138,9 @@ it does locally. Deploy once, then prefix any command with `on <host>`:
 ```
 overseer deploy sandbox                  # copy scripts to sandbox:~/.overseer (ssh + tar)
 overseer on sandbox doctor               # remote preflight: tmux + a running agent + jq + ssh key
-overseer on sandbox chat --yes %0 'hi'   # drive the remote agent; the reply streams back
+overseer on sandbox start work codex     # create a detached codex session ON the remote box
+overseer on sandbox chat --yes work 'hi' # drive it; the reply streams back
+overseer on sandbox stop work            # tear it down when done
 ```
 
 `<host>` is any ssh target (a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name);

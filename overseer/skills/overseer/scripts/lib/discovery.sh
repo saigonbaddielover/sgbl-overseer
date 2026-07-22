@@ -61,6 +61,7 @@ _is_posix_shell() {
     *) return 1 ;;
   esac
 }
+_ok_session_name() { case "${1:-}" in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
 # prune by pane command first (claude runs as `claude`, codex as `node`) so the fd scan only runs
 # on plausible panes.

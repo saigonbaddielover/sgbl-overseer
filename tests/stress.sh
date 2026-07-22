@@ -63,6 +63,40 @@ EP=$(tmux list-panes -t "$se" -F '#{pane_id}' | head -1)
 t0=$(date +%s); rc=0; _wait_reply codex /nope.jsonl 0 30 "" 0 "$EP" "" || rc=$?; el=$(( $(date +%s) - t0 ))
 { [ "$rc" = 3 ] && [ "$el" -lt 10 ]; } && ok "liveness rc=3 in ${el}s (not 30s)" || no "liveness rc=$rc el=${el}s"
 
+echo "== F: start/stop lifecycle (create -> drive -> destroy a shell session) =="
+FN="ovS_F_$$"; SESS+=("$FN")
+bash "$O" start "$FN" shell >/dev/null 2>&1
+if tmux has-session -t "=$FN" 2>/dev/null; then
+  ok "start created the shell session"
+  fo=$(bash "$O" sh "$FN" 'echo START-STOP-OK' 15 2>&1)
+  case "$fo" in *START-STOP-OK*) ok "the started session is drivable via sh" ;; *) no "started session not drivable" ;; esac
+  bash "$O" stop "$FN" >/dev/null 2>&1
+  tmux has-session -t "=$FN" 2>/dev/null && no "stop did not remove the session" || ok "stop removed the session"
+else
+  no "start did not create a shell session"
+fi
+if bash "$O" start 'bad.name' shell >/dev/null 2>&1; then no "start accepted an invalid name (bad.name)"; else ok "start refuses an invalid name"; fi
+
+echo "== F2: stop %N kills one pane, keeps the session =="
+sp="ovS_Fp_$$"; tmux new-session -d -s "$sp" -x 80 -y 24 2>/dev/null; SESS+=("$sp")
+tmux split-window -t "$sp" 2>/dev/null
+before=$(tmux list-panes -t "$sp" 2>/dev/null | wc -l)
+victim=$(tmux list-panes -t "$sp" -F '#{pane_id}' 2>/dev/null | tail -1)
+bash "$O" stop "$victim" >/dev/null 2>&1
+after=$(tmux list-panes -t "$sp" 2>/dev/null | wc -l)
+{ [ "$before" = 2 ] && [ "$after" = 1 ]; } && ok "stop %N kills one pane (before=$before after=$after)" || no "stop %N pane count wrong (before=$before after=$after)"
+
+if command -v codex >/dev/null 2>&1; then
+  echo "== F3: start a real codex, assert readiness via list, stop =="
+  cn="ovS_Fc_$$"; SESS+=("$cn")
+  bash "$O" start "$cn" codex >/dev/null 2>&1
+  if bash "$O" list 2>/dev/null | grep -q "$cn"; then ok "start codex came up (listed as an agent)"; else no "start codex not detected as an agent"; fi
+  bash "$O" stop "$cn" >/dev/null 2>&1
+  tmux has-session -t "=$cn" 2>/dev/null && no "stop did not remove the codex session" || ok "stop removed the codex session"
+else
+  echo "== F3: skipped (no codex on PATH; the shell start/stop above needs no agent) =="
+fi
+
 if [ -n "${OVERSEER_STRESS_CODEX_PANE:-}" ]; then
   CP="$OVERSEER_STRESS_CODEX_PANE"
   echo "== D: codex send-path safety on $CP =="
