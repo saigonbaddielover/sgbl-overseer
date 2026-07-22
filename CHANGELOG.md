@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-22
+
+### Added
+
+- **`hosts` — a fleet survey.** `overseer hosts` prints one line per host (`ONLINE OS SSH DRIVE`) so
+  you can see which machines you can actually drive before an `on`/`win*`. The inventory of ssh targets
+  comes from `$OVERSEER_HOSTS` if set, else `$XDG_CONFIG_HOME/overseer/hosts`, else the non-wildcard
+  `Host` entries of `~/.ssh/config` — those carry the **user + key** a bare Tailscale IP lacks, which is
+  the gap this fills. Each host is probed **live and in parallel**: `SSH` = `ok`/`deny`/`unreach`, `OS`
+  = `linux`/`windows`/`macos`, `DRIVE` = `yes` (Linux with `tmux`+`jq`), `no:tmux`/`no:jq`, or `win*`
+  for a reachable Windows host. `ONLINE` is filled from `tailscale status` when the CLI is present.
+  Deliberately **stateless** — no credential or health database (ssh keys stay the credential;
+  reachability is recomputed each run rather than cached, since a stored health value only goes stale),
+  keeping [ADR-0002](docs/DECISIONS.md). `--list` prints the inventory without probing; `-t` sets the
+  per-host ssh connect timeout (default 6s). Pure parsers (`_hosts_parse`, `_ssh_config_hosts`,
+  `_ts_state`) are fixture-tested in `tests/run.sh`.
+
 ## [0.17.2] - 2026-07-22
 
 ### Fixed
