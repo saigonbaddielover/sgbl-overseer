@@ -5,6 +5,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-22
+
+### Added
+
+- **`hosts`: the login user, and `--tailscale` enumeration.** The first `hosts` cut assumed every host's
+  user + key lived in `~/.ssh/config`, but a Tailscale-native fleet is only *IPs* there — the shared
+  login user (e.g. `agency` across a rack of Windows boxes) lives nowhere, so probes silently fell back
+  to the local username and reported a misleading `deny`. Now:
+  - The `HOST` column shows the **effective `user@host`** — the user resolved from `ssh -G` (so an
+    ssh-config `Host … User agency` block is honoured *and visible*), so "it's about to log in as the
+    wrong user" is something you can see rather than guess.
+  - `-u USER` / `$OVERSEER_HOSTS_USER` forces the login user for any bare host, for the common
+    "one user across the whole fleet" case where it isn't worth an ssh-config entry per machine.
+  - `--tailscale` takes the inventory straight from `tailscale status` (filter with `--os windows` /
+    `--os linux`) — so machines you never added to ssh config are still surveyed. It enumerates by
+    **Tailscale IP** (not the MagicDNS short name): the IP is what an IP-keyed `~/.ssh/config` fleet
+    block and `known_hosts` already cover, so it connects where the bare name trips host-key checking.
+    Combine them: `overseer hosts --tailscale --os windows -u agency`.
+  - `SSH` now distinguishes **`hostkey`** (the host answered but its key isn't trusted yet — accept it
+    or set `StrictHostKeyChecking accept-new`) from `unreach`, instead of mislabelling the former.
+  - New pure enumerator `_ts_hosts` is fixture-tested in `tests/run.sh`.
+
 ## [0.18.0] - 2026-07-22
 
 ### Added
