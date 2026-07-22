@@ -43,6 +43,8 @@ server-side.
   keystroke injection and the screen buffer lives client-side). Windows targets use the broker
   instead — see [docs/WINDOWS.md](docs/WINDOWS.md) for its prerequisites and security model.
 - **jq** — for transcript reading.
+- **ssh, scp, base64, iconv** — only for the remote (`on`) and Windows (`win*`) commands; the local
+  tmux commands need none of them.
 - **bash ≥ 4.1** — the script uses named file descriptors and associative arrays; stock macOS bash 3.2
   is too old (install a newer bash and run overseer under it).
 - **Claude Code** — this is a plugin for it.
@@ -109,8 +111,9 @@ message to read a long, multi-line prompt from stdin.
 Two environment variables tune the defaults (both validated at startup, so a bad value fails loudly):
 `OVERSEER_TIMEOUT` (default `600`) is the fallback `[timeout]` seconds for `chat`/`wait`/`sh`, and
 `OVERSEER_POLL_INTERVAL` (default `0.25`) is the poll cadence in seconds. Two more point overseer at
-non-default state directories: `CLAUDE_HOME` (default `~/.claude`) and `CODEX_HOME` (default `~/.codex`),
-used to find session files, transcripts and the hook markers.
+non-default state directories: `CLAUDE_HOME` (default `~/.claude`), used to find Claude's session
+files, transcripts and the hook markers. `CODEX_HOME` (default `~/.codex`) is read only by `doctor` —
+live Codex discovery finds the rollout the running process holds open via `/proc`, so it is unaffected.
 
 For a Windows target, `OVERSEER_WIN_CLAUDE` (default `claude`) and `OVERSEER_WIN_CODEX` (default
 `codex`) name the command `winbroker` launches on that host — set them when the agent is installed

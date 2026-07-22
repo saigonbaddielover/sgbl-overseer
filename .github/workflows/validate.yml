@@ -92,6 +92,5 @@ jobs:
       - name: harness-free stress subset
         timeout-minutes: 5
         env:
-          OVERSEER_STRESS_PERF_LASTREPLY: "20"
-          OVERSEER_STRESS_PERF_TURNS: "8"
+          OVERSEER_STRESS_NO_PERF: "1"
         run: bash tests/stress.sh

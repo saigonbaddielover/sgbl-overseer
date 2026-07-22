@@ -233,7 +233,7 @@ cmd_winpeek() {
   _need ssh
   local target="${1:-}"; [ -n "$target" ] || _die "usage: overseer winpeek <host>[/name]   (snapshot the remote WINDOWS broker's screen; run 'overseer winbroker <host>' first)"
   _win_split "$target"
-  _win_client snap
+  _win_snap
 }
 cmd_winkeys() {
   _need ssh; _need base64
