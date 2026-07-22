@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-22
+
+### Added
+
+- **`on <host>` auto-deploys on first use.** You no longer have to `deploy <host>` before the first
+  `on <host> …` — `on` runs a cheap `[ -f "$bin" ]` probe and, if `~/.overseer` isn't there yet, runs
+  `deploy` once and then executes the command. The probe rides the same `ControlMaster` the real command
+  then reuses, so it warms the connection rather than adding a round-trip. Scoped to the **default layout**:
+  a custom `OVERSEER_REMOTE_BIN` (yours to manage) or `OVERSEER_NO_AUTODEPLOY=1` skips it, and a failed
+  auto-deploy is fatal with a clear message. `deploy` stays the way to **update** a host after changing
+  overseer. Covered by new `tests/run.sh` unit tests (`_on_ensure_deployed`, ssh + `cmd_deploy` mocked).
+
 ## [0.22.0] - 2026-07-22
 
 ### Added

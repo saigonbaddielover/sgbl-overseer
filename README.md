@@ -99,8 +99,8 @@ All work goes through one script; the agent calls it as
 | `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
 | `hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]` | **Remote (SSH), fleet survey.** Print one line per host — `HOST ONLINE OS SSH DRIVE`, where `HOST` is the **effective `user@host`** — so you can see which machines you can actually drive, *and as which user*, before an `on`/`win`. The inventory (ssh targets to probe) comes from `$OVERSEER_HOSTS` if set, else `$XDG_CONFIG_HOME/overseer/hosts`, else the non-wildcard `Host` entries of `~/.ssh/config`; or pass `--tailscale` to enumerate the tailnet directly (`--os windows`/`linux` filters it) for machines you never added to ssh config. **The login user** for a bare host (no `user@`) is resolved from `ssh -G` — so an ssh-config `Host … User fleetuser` block is honoured and shown — or forced with `-u USER` / `$OVERSEER_HOSTS_USER` when it lives nowhere (the common "same user across the whole fleet" case). Each host is probed **live and in parallel**: `SSH` is `ok`/`deny`/`unreach`, `OS` is `linux`/`windows`/`macos`, `DRIVE` is `yes` (Linux with `tmux`+`jq`), `no:tmux`/`no:jq`, or `win*` (a Windows broker target). `ONLINE` is filled from `tailscale status` when the CLI is present. Nothing is stored — reachability is computed each run (a cached health value would just be stale). `--list` prints the inventory without probing; `-t` sets the per-host ssh connect timeout (default 6s). |
 | `provision [--dry-run] <host>` | **Remote (SSH).** Install the missing Linux **drive** dependencies (`tmux` + `jq`) on a reachable host — the fix for a `hosts` `DRIVE=no:tmux`/`no:jq`. Detects the package manager (`apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk`), installs only what's absent (idempotent), and needs **root or passwordless `sudo`** on the host (it runs non-interactively). `--dry-run` prints the exact command instead of running it. Linux only, and only the base deps — Claude/Codex agents (and every Windows prerequisite) are still set up by hand. |
-| `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host (re-run to update). |
-| `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
+| `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Usually you don't call this by hand — `on` auto-deploys on first use; run `deploy` explicitly to **update** a host after changing overseer, or to pre-stage before a blocking command. |
+| `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. **Auto-deploys on first use**: a quick `[ -f ]` probe (over the same multiplexed master the real command then reuses, so it costs nothing extra) runs `deploy` once if `~/.overseer` isn't there yet — so `on <host> …` just works without a prior `deploy`. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
 | `win <host>[/name] <verb>` | **Remote (SSH), Windows target.** Drive a remote Windows **console broker** over plain ssh — the `win` prefix is to a Windows host what `on <host>` is to a remote Linux one. `<host>[/name]` picks the broker (add `/name` to run several side by side); `<verb>` is one of the shared verbs in the table below (the same vocabulary as the Linux commands). The broker is a **visible** console child (pwsh / Claude Code / Codex) exposing a machine-wide named pipe that speaks `WriteConsoleInput`/`ReadConsoleOutputCharacter` — the Windows analogue of tmux `send-keys`/`capture-pane`, so a plain-SSH host with no tmux is still drivable. Full rationale in [docs/WINDOWS.md](docs/WINDOWS.md). |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
@@ -152,24 +152,28 @@ into a command line.
 
 To drive a pane on another Linux box — e.g. across a Tailscale tailnet — run the whole overseer program
 on that host over ssh, so its tmux/`/proc`/transcript reads stay co-located and every command behaves as
-it does locally. Deploy once, then prefix any command with `on <host>`:
+it does locally. Just prefix any command with `on <host>` — the first `on` **auto-deploys** overseer to
+the host, so no separate step is needed:
 
 ```
-overseer deploy sandbox                  # copy scripts to sandbox:~/.overseer (ssh + tar)
-overseer on sandbox doctor               # remote preflight: tmux + a running agent + jq + ssh key
+overseer on sandbox doctor               # first use auto-deploys, then runs remote preflight
 overseer on sandbox start work codex     # create a detached codex session ON the remote box
 overseer on sandbox chat --yes work 'hi' # drive it; the reply streams back
 overseer on sandbox stop work            # tear it down when done
+overseer deploy sandbox                  # only needed to UPDATE the host after changing overseer
 ```
 
 `<host>` is any ssh target (a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name);
 credentials are ssh's own — no daemon, DB, or token store. overseer adds `ControlMaster`+`ControlPersist`
 so bursts of one-shot commands reuse one connection. A blocking `chat`/`wait`/`sh` polls remote-side and
 ssh just holds the pipe, so no separate event channel is needed. Pass `--yes` for a remote `chat`/`send`:
-without a tty the confirm gate can't prompt, so it fails closed. Overrides: `OVERSEER_REMOTE_DIR` (where
-`deploy` writes, default `.overseer` under the remote `$HOME`) and `OVERSEER_REMOTE_BIN` (what `on` then
-executes, default `$HOME/.overseer/scripts/overseer`) — **change one and you must change the other to
-match** — plus `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`, and `OVERSEER_SCP` for the Windows transcript fetch.
+without a tty the confirm gate can't prompt, so it fails closed. Auto-deploy runs only for the default
+layout; set `OVERSEER_NO_AUTODEPLOY=1` to turn it off (then `deploy` by hand). Overrides:
+`OVERSEER_REMOTE_DIR` (where `deploy` writes, default `.overseer` under the remote `$HOME`) and
+`OVERSEER_REMOTE_BIN` (what `on` then executes, default `$HOME/.overseer/scripts/overseer`; setting it
+also disables auto-deploy, since a custom bin is yours to manage) — **change one and you must change the
+other to match** — plus `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`, and `OVERSEER_SCP` for the Windows transcript
+fetch.
 
 The `on`/`deploy` model targets **Linux** (it runs overseer, which needs `/proc` + tmux). A **Windows**
 host in the tailnet is reached differently: overseer can't run there, so the `win <host> <verb>` commands
