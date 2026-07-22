@@ -50,6 +50,8 @@ main() {
     fleet) cmd_fleet "$@" ;;
     sh)   cmd_sh "$@" ;;
     quit) cmd_quit "$@" ;;
+    start) cmd_start "$@" ;;
+    stop) cmd_stop "$@" ;;
     slash) cmd_slash "$@" ;;
     menu) cmd_menu "$@" ;;
     doctor) cmd_doctor "$@" ;;
@@ -69,6 +71,8 @@ main() {
       printf 'usage: overseer <command> [args]   (t = tmux pane id %%N or session name)\n'
       printf '  agent = a Claude Code OR Codex session; read/chat/send/wait auto-detect which.\n'
       printf '  list [--all]               agent panes + HARNESS (--all: every tmux pane + its command)\n'
+      printf '  start <name> [shell|claude|codex] [workdir]  create a DETACHED tmux session running a shell/agent (attach to watch); same via "on <host> start ..."\n'
+      printf '  stop  <t>                  kill the tmux session (or a %%N pane) and its child; refuses to kill the session overseer is in\n'
       printf '  read  <t>                  agent: last user prompt + last assistant reply (from transcript)\n'
       printf '  peek  [raw|-e] <t> [lines] full current screen (raw: keep colors -> see active tab/selection; [lines] applies to plain only)\n'
       printf '  chat  [--yes] [--force] <t> <msg|-> [timeout]  agent: send, wait for the reply, print it\n'

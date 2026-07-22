@@ -88,6 +88,60 @@ eq "sh refuses a nu pane"                   "yes" "$(case "$(_shpane nu)"    in 
 eq "sh names the shells it can drive"       "yes" "$(case "$(_shpane tcsh)"  in *"sh, bash, zsh, dash, ksh, mksh, ash"*) echo yes ;; *) echo no ;; esac)"
 eq "sh does not refuse a bash pane"         "yes" "$(case "$(_shpane bash)"  in *"cannot drive"*) echo no ;; *) echo yes ;; esac)"
 
+eq "ok session name 'work'"      "yes" "$(_ok_session_name work  && echo yes || echo no)"
+eq "ok session name 'a_b-2'"     "yes" "$(_ok_session_name a_b-2 && echo yes || echo no)"
+eq "reject empty session name"   "no"  "$(_ok_session_name ''    && echo yes || echo no)"
+eq "reject dotted session name"  "no"  "$(_ok_session_name a.b   && echo yes || echo no)"
+eq "reject coloned session name" "no"  "$(_ok_session_name a:b   && echo yes || echo no)"
+eq "reject spaced session name"  "no"  "$(_ok_session_name 'a b' && echo yes || echo no)"
+eq "reject slashed session name" "no"  "$(_ok_session_name a/b   && echo yes || echo no)"
+eq "reject punct session name"   "no"  "$(_ok_session_name 'a!b' && echo yes || echo no)"
+
+_startgate() {
+  ( _need() { :; }; _nap() { :; }
+    _harness_of() { printf claude; }
+    _hs="${4:-1}"
+    tmux() { case "$1" in
+        has-session)     return "$_hs" ;;
+        new-session)     printf 'NEWSESSION\n'; return 0 ;;
+        list-panes)      printf '%%9\n' ;;
+        display-message) printf '1234\n' ;;
+        *)               return 0 ;;
+      esac }
+    cmd_start "$1" "$2" "$3" ) 2>&1
+}
+_made() { case "$1" in *NEWSESSION*) echo yes ;; *) echo no ;; esac; }
+eq "start refuses a dotted name"                "yes" "$(case "$(_startgate 'a.b' shell '')" in *'invalid session name'*) echo yes ;; *) echo no ;; esac)"
+eq "start does not create for a bad name"       "no"  "$(_made "$(_startgate 'a.b' shell '')")"
+eq "start refuses an unknown child"             "yes" "$(case "$(_startgate ok weird '')" in *'child must be'*) echo yes ;; *) echo no ;; esac)"
+eq "start does not create for a bad child"      "no"  "$(_made "$(_startgate ok weird '')")"
+eq "start refuses an existing session"          "yes" "$(case "$(_startgate ok shell '' 0)" in *'already exists'*) echo yes ;; *) echo no ;; esac)"
+eq "start does not recreate an existing name"   "no"  "$(_made "$(_startgate ok shell '' 0)")"
+eq "start creates a valid shell session"        "yes" "$(_made "$(_startgate ok shell '')")"
+eq "start reports the shell session it made"    "yes" "$(case "$(_startgate ok shell '')" in *'started shell session ok'*) echo yes ;; *) echo no ;; esac)"
+eq "start waits for the agent then reports it"  "yes" "$(case "$(_startgate c1 claude '')" in *'started claude session c1'*) echo yes ;; *) echo no ;; esac)"
+
+_stopgate() {
+  ( _need() { :; }
+    _resolve_pane() { printf '%%9'; }
+    TMUX_PANE="$2"; export TMUX_PANE; _ms="$3"
+    tmux() { case "$1" in
+        has-session)             return 0 ;;
+        display-message)         printf '%s' "$_ms" ;;
+        kill-pane|kill-session)  printf 'KILLED\n'; return 0 ;;
+        *)                       return 0 ;;
+      esac }
+    cmd_stop "$1" ) 2>&1
+}
+_killed() { case "$1" in *KILLED*) echo yes ;; *) echo no ;; esac; }
+eq "stop refuses to kill its own session" "yes" "$(case "$(_stopgate work %9 work)" in *'refusing to kill the session'*) echo yes ;; *) echo no ;; esac)"
+eq "stop does not kill its own session"   "no"  "$(_killed "$(_stopgate work %9 work)")"
+eq "stop kills another named session"     "yes" "$(_killed "$(_stopgate work %9 other)")"
+eq "stop refuses to kill its own pane"    "yes" "$(case "$(_stopgate %9 %9 x)" in *'refusing to kill the pane'*) echo yes ;; *) echo no ;; esac)"
+eq "stop does not kill its own pane"      "no"  "$(_killed "$(_stopgate %9 %9 x)")"
+eq "stop kills another pane"              "yes" "$(_killed "$(_stopgate %9 %1 x)")"
+eq "stop unguarded when not inside tmux"  "yes" "$(_killed "$(_stopgate work '' x)")"
+
 _cxpid() { ( _want="$1"
              _p_comm() { [ "$1" = "$_want" ] && printf codex || printf node; }
              _p_children() { [ "$1" = 100 ] && printf '200\n'; }

@@ -5,6 +5,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-22
+
+Linux tmux lifecycle, to match what the Windows side already had: overseer can now **create and destroy**
+its own tmux sessions — local and remote — instead of only attaching to ones someone else started.
+
+### Added
+
+- **`start <name> [shell|claude|codex] [workdir]`** opens a new **detached** tmux session named `<name>`
+  running a shell (default), Claude Code or Codex. For an agent it blocks until the harness has actually
+  come up (polls the same `_harness_of` discovery the rest of overseer uses) before returning, so a
+  following `chat`/`wait` doesn't race the launch; for a shell it returns immediately. The user watches it
+  with `tmux attach -t <name>`. It refuses a name outside `[A-Za-z0-9_-]` (tmux forbids `:`/`.`, and the
+  restriction also keeps the name out of any injection surface) or one already in use, and a non-existent
+  `workdir`. Because `on <host> …` runs the whole program remote-side, `on <host> start …` creates the
+  session on the remote box with no extra machinery — the Linux create/reuse/delete story now works over
+  the tailnet exactly as it does locally.
+- **`stop <target>`** tears a session down: a `%N` pane → `kill-pane` (that one pane); a session name →
+  `kill-session` (the whole session), which SIGHUPs the child agent/shell. It **refuses to kill the
+  session overseer is itself running in** (comparing `$TMUX_PANE`), so it can't cut its own connection;
+  that guard is inert under `on` (a remote ssh shell isn't in tmux), so remote `stop` is unrestricted.
+  The Linux peer of `winstop`. Use `quit` when you only want to leave an agent's TUI but keep the pane.
+
 ## [0.16.0] - 2026-07-22
 
 The documentation-and-test-honesty half of the audit: make the docs match the code and make the tests

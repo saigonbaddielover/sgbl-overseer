@@ -1,5 +1,5 @@
 ---
-description: Read or drive ANOTHER live agent process from outside it — a running Claude Code or Codex session, or a plain shell — in a local or remote Linux tmux pane, or in a console window on a remote WINDOWS machine over SSH. Use when the user wants to see the latest conversation of a claude or codex they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell they are watching, list which tmux panes are running what agent, or start/drive/stop a claude, codex or pwsh on a Windows PC's visible desktop (winbroker/winchat/winsh/winread/winstop). read/chat/send/wait/list auto-detect the harness (Claude Code or Codex). Overseer itself runs on a Linux controller; its targets are Linux tmux panes (local or over ssh) and remote native Windows console brokers. Local pane discovery is Linux + tmux only; a plain non-tmux Linux terminal cannot be driven.
+description: Read or drive ANOTHER live agent process from outside it — a running Claude Code or Codex session, or a plain shell — in a local or remote Linux tmux pane, or in a console window on a remote WINDOWS machine over SSH. Use when the user wants to see the latest conversation of a claude or codex they are watching, send a message / reply on their behalf to it, run a command turn-based in a shell they are watching, list which tmux panes are running what agent, create or tear down a Linux tmux session running a shell/claude/codex (start/stop), or start/drive/stop a claude, codex or pwsh on a Windows PC's visible desktop (winbroker/winchat/winsh/winread/winstop). read/chat/send/wait/list auto-detect the harness (Claude Code or Codex). Overseer itself runs on a Linux controller; its targets are Linux tmux panes (local or over ssh) and remote native Windows console brokers. Local pane discovery is Linux + tmux only; a plain non-tmux Linux terminal cannot be driven.
 ---
 
 # overseer — read and drive a live tmux pane (Claude Code, Codex, or a plain shell)
@@ -42,6 +42,8 @@ from stdin.
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
 | `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (a fan-out over the per-pane commands; each pane is handled in isolation so one failure never aborts the batch). With no subcommand it defaults to `status`, which prints one line per pane — harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for an agent that hasn't taken a turn yet and `(not an agent)` for a pane that stopped being one. `read` and `wait [timeout]` fan those out; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes, each still subject to its own confirm/mid-turn guard. Use `status` to survey many sessions; broadcast only when the user explicitly asks to message every agent. | status/read/wait read-only · send/chat **SIDE EFFECT** |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
+| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session `<name>` running a shell (default), Claude Code or Codex; for an agent it blocks until the harness has actually come up before returning. The user watches it with `tmux attach -t <name>`; you drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name outside `[A-Za-z0-9_-]` or one already in use. | **SIDE EFFECT** (spawns a session) |
+| `stop <target>` | **Delete (Linux tmux).** Tear down a `start`ed session (or any tmux target): a `%N` pane → `kill-pane` (that pane); a session name → `kill-session` (the whole session + its child, via SIGHUP). Refuses to kill the session overseer is running in. The Linux peer of `winstop`; use `quit` instead when you only want to leave an agent's TUI but keep the pane. | **SIDE EFFECT** (destroys a session) |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. The leading `/` is optional (`slash <t> resume` works). A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
 | `menu <target> <item> [nav-key]` | **Any pane** (no harness gate — it works off what is highlighted on screen). Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
 | `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses any pane that is not an idle POSIX-ish shell (`sh`, `bash`, `zsh`, `dash`, `ksh`, `mksh`, `ash`) — its wrapper is POSIX-only, so fish/tcsh/csh/nu/xonsh/elvish are rejected up front rather than hanging to timeout. If the output outran the pane's scrollback, it reports the exit code and says the output can't be captured whole — re-run with `> out.txt 2>&1` and read the file. | **SIDE EFFECT** |
@@ -117,7 +119,9 @@ overseer is a **Linux controller** and drives two kinds of target:
 
 - **Linux tmux panes** — local, or on another Linux host over ssh (`deploy` + `on`, which runs the
   whole program remote-side). tmux is client/server, so a pane attached from a VSCode Remote-SSH
-  terminal is driven server-side and the user still sees it live.
+  terminal is driven server-side and the user still sees it live. overseer both drives panes someone
+  else opened and, with `start`/`stop`, creates and destroys its own **detached** sessions running a
+  shell/claude/codex (the user runs `tmux attach -t <name>` to watch one) — the same local or via `on`.
 - **Remote native Windows consoles** over plain ssh — the `win*` commands, which drive a PowerShell
   **broker** on the host's visible desktop. No tmux, no WSL, and overseer itself never runs there.
 
@@ -269,6 +273,12 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
    trust boundary: its random name and auth token live in an ACL'd descriptor on the host — **never
    print, log, or relay a broker descriptor**. Prerequisites and the full model:
    [docs/WINDOWS.md](../../../docs/WINDOWS.md).
+8. **`start` spawns a process; `stop` destroys a session.** `start` opens a new detached tmux session
+   running a shell or agent; `stop` kills a `%N` pane or a whole named session and its child. Both are
+   side effects on the user's machine — run them only when the user asked to create or tear down a
+   session. `stop` is destructive (the child dies); it refuses to kill the session overseer itself runs
+   in but will kill any other named session. Prefer `quit` when the user only wants to leave an agent's
+   TUI while keeping the pane.
 
 ## Gotchas the script already handles (do not re-derive)
 
