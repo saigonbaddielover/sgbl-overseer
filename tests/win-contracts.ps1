@@ -27,9 +27,9 @@ $clientSrc = Get-Content -Raw (Join-Path $scripts 'win-client.ps1')
 $launchSrc = Get-Content -Raw (Join-Path $scripts 'win-launch.ps1')
 
 Import-Fn 'win-broker.ps1' 'Test-TranscriptPath'
-Check 'txpath: accepts a normal claude path' $true (Test-TranscriptPath 'C:/Users/ndman/.claude/projects/D--Workspace/a-1.jsonl')
-Check 'txpath: accepts a normal codex path'  $true (Test-TranscriptPath 'C:/Users/ndman/.codex/sessions/2026/07/22/rollout-x.jsonl')
-Check 'txpath: accepts a backslash path'     $true (Test-TranscriptPath 'C:\Users\ndman\.claude\projects\x\y.jsonl')
+Check 'txpath: accepts a normal claude path' $true (Test-TranscriptPath 'C:/Users/user/.claude/projects/D--Workspace/a-1.jsonl')
+Check 'txpath: accepts a normal codex path'  $true (Test-TranscriptPath 'C:/Users/user/.codex/sessions/2026/07/22/rollout-x.jsonl')
+Check 'txpath: accepts a backslash path'     $true (Test-TranscriptPath 'C:\Users\user\.claude\projects\x\y.jsonl')
 Check 'txpath: accepts a spaced username'    $true (Test-TranscriptPath 'C:/Users/John Doe/.claude/projects/x/y.jsonl')
 Check 'txpath: rejects an ampersand'         $false (Test-TranscriptPath "C:/Users/x/rollout-a & calc.jsonl")
 Check 'txpath: rejects a command sub'        $false (Test-TranscriptPath 'C:/Users/x/$(calc).jsonl')

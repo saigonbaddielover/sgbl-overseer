@@ -111,8 +111,8 @@ eq "reject spaced session name"  "no"  "$(_ok_session_name 'a b' && echo yes || 
 eq "reject slashed session name" "no"  "$(_ok_session_name a/b   && echo yes || echo no)"
 eq "reject punct session name"   "no"  "$(_ok_session_name 'a!b' && echo yes || echo no)"
 
-eq "hosts: parse strips comments + blanks, first token wins" "sandbox@ubuntu-sandbox
-ndman@100.77.19.60" "$(printf '# fleet\n\nsandbox@ubuntu-sandbox  # linux box\n  ndman@100.77.19.60 win\n' | _hosts_parse)"
+eq "hosts: parse strips comments + blanks, first token wins" "user@host-a
+admin@host-b" "$(printf '# fleet\n\nuser@host-a  # linux box\n  admin@host-b win\n' | _hosts_parse)"
 eq "ssh-config: non-wildcard Host tokens only" "sandbox
 web1
 web2" "$(printf 'Host *\n  User x\nHost sandbox\n  HostName 1.2.3.4\nHost web1 web2 !bad *.eg\n  User y\n' | _ssh_config_hosts)"
@@ -221,15 +221,15 @@ eq "is_shell reject claude" "1"                        "$(_is_shell claude; echo
 
 _split() { ( _win_split "$1" >/dev/null 2>&1 && printf '%s %s' "$_WH" "$_WP" ) || printf 'rejected'; }
 eq "win_split bare host"    "win1 overseer-broker"           "$(_split win1)"
-eq "win_split user@ip"      "ndman@10.0.0.9 overseer-broker" "$(_split ndman@10.0.0.9)"
+eq "win_split user@ip"      "admin@10.0.0.9 overseer-broker" "$(_split admin@10.0.0.9)"
 eq "win_split named broker" "win1 overseer-broker-v10"       "$(_split win1/v10)"
 eq "win_split name w/ -_"   "win1 overseer-broker-a_b-2"     "$(_split win1/a_b-2)"
 eq "win_split reject punct" "rejected"                       "$(_split 'win1/oops!')"
 eq "win_split reject empty" "rejected"                       "$(_split 'win1/')"
 
 _tx() { _win_txok "$1" && echo ok || echo reject; }
-eq "txok normal claude path"  "ok"     "$(_tx 'C:/Users/ndman/.claude/projects/D--Workspace/a-1.jsonl')"
-eq "txok normal codex path"   "ok"     "$(_tx 'C:/Users/ndman/.codex/sessions/2026/07/21/rollout-x.jsonl')"
+eq "txok normal claude path"  "ok"     "$(_tx 'C:/Users/user/.claude/projects/D--Workspace/a-1.jsonl')"
+eq "txok normal codex path"   "ok"     "$(_tx 'C:/Users/user/.codex/sessions/2026/07/21/rollout-x.jsonl')"
 eq "txok username with space" "ok"     "$(_tx 'C:/Users/John Doe/.claude/projects/x/y.jsonl')"
 eq "txok rejects ampersand"   "reject" "$(_tx 'C:/Users/x/rollout-a & calc.jsonl')"
 eq "txok rejects command sub" "reject" "$(_tx 'C:/Users/x/$(calc).jsonl')"
