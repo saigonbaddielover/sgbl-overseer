@@ -11,7 +11,8 @@ console windows** on a remote machine's visible desktop. Packaged as a
 On Linux, overseer both **drives sessions someone else started** and **starts/stops its own**: `list`
 discovers a tmux pane already running Claude Code, Codex or a shell and reads/drives it turn-based, while
 `start` opens a fresh **detached** tmux session running a shell or agent and `stop` tears one down. (On a
-Windows host — which has no tmux pane to find — `winbroker`/`winstop` are the equivalent pair.) Today it
+Windows host — which has no tmux pane to find — `win <host> start`/`win <host> stop` are the equivalent
+pair.) Today it
 speaks **Claude Code** and **Codex** (plus any shell); `read`/`chat`/`send`/`wait`/`list` auto-detect
 which harness a pane runs. It's built so more harnesses can be added behind the same commands.
 
@@ -32,7 +33,7 @@ server-side.
 | | |
 |---|---|
 | **Controller** (where overseer runs) | **Linux** only — pane discovery reads `/proc`. Needs `tmux`, `jq`, `bash ≥ 4.1`, plus `ssh`/`scp` for any remote target. |
-| **Targets** | **Linux tmux panes**, local or on another Linux host over ssh (`deploy` + `on`); **remote native Windows consoles** over plain ssh (the `win*` commands, via a PowerShell broker on the visible desktop — no tmux and no WSL there). |
+| **Targets** | **Linux tmux panes**, local or on another Linux host over ssh (`deploy` + `on`); **remote native Windows consoles** over plain ssh (the `win <host> <verb>` commands, via a PowerShell broker on the visible desktop — no tmux and no WSL there). |
 | **Not supported** | A macOS controller (specced in [docs/PORTING.md](docs/PORTING.md), unbuilt); local pane discovery anywhere but Linux + tmux; a plain non-tmux Linux terminal as a target. |
 
 ## Requirements
@@ -43,8 +44,9 @@ server-side.
   keystroke injection and the screen buffer lives client-side). Windows targets use the broker
   instead — see [docs/WINDOWS.md](docs/WINDOWS.md) for its prerequisites and security model.
 - **jq** — for transcript reading.
-- **ssh** — required by the remote `on`/`deploy` commands and all `win*`. **tar** — by `deploy` only
-  (it ships `scripts/` over ssh + tar). **scp, base64, iconv** — by the Windows `win*` commands only.
+- **ssh** — required by the remote `on`/`deploy` commands and all `win <host> <verb>`. **tar** — by
+  `deploy` only (it ships `scripts/` over ssh + tar). **scp, base64, iconv** — by the Windows `win`
+  commands only.
   The local tmux commands need none of these.
 - **bash ≥ 4.1** — the script uses named file descriptors and associative arrays; stock macOS bash 3.2
   is too old (install a newer bash and run overseer under it).
@@ -89,29 +91,39 @@ All work goes through one script; the agent calls it as
 | `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (no subcommand = `status`). `status` = one line each (harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for a started-but-unused agent and `(not an agent)` for a pane that stopped being one); `read`; `wait [timeout]`; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes. A thin fan-out over the per-pane commands — each pane keeps its own guards, and one failing pane never aborts the batch. |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
 | `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session named `<name>` running a shell (default), Claude Code or Codex; for an agent it waits until the harness has actually come up before returning. Watch it with `tmux attach -t <name>`, then drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name that isn't `[A-Za-z0-9_-]`, one already in use, or a `workdir` that does not exist. |
-| `stop <target>` | **Delete (Linux tmux).** Tear down what `start` made (or any tmux target): a `%N` pane → `kill-pane` (that one pane); a session name → `kill-session` (the whole session), which SIGHUPs its child agent/shell. Refuses to kill the session — or, for a `%N` target, the pane — overseer itself is running in. The Linux peer of `winstop`. |
+| `stop <target>` | **Delete (Linux tmux).** Tear down what `start` made (or any tmux target): a `%N` pane → `kill-pane` (that one pane); a session name → `kill-session` (the whole session), which SIGHUPs its child agent/shell. Refuses to kill the session — or, for a `%N` target, the pane — overseer itself is running in. The Linux peer of `win <host> stop`. |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. The leading `/` is optional — `slash <target> resume` works too. |
 | `menu <target> <item> [nav-key]` | **Any pane.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Default nav key `Right` suits a Claude tab bar; Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
 | `keys <target> <key>...` | Send raw tmux keys (`Enter`, `Escape`, `Up`, `C-c`, ...). Any pane. |
 | `doctor [--live]` | Preflight: check Linux/`/proc`, `tmux`, `jq`, `codex`, and that Claude/Codex session state is where discovery expects it. `--live` (also plain `live`) additionally drives a throwaway pane through a `sh` round-trip to verify the send/capture path end to end; a failing `--live` check makes `doctor` exit non-zero. |
-| `hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]` | **Remote (SSH), fleet survey.** Print one line per host — `HOST ONLINE OS SSH DRIVE`, where `HOST` is the **effective `user@host`** — so you can see which machines you can actually drive, *and as which user*, before an `on`/`win*`. The inventory (ssh targets to probe) comes from `$OVERSEER_HOSTS` if set, else `$XDG_CONFIG_HOME/overseer/hosts`, else the non-wildcard `Host` entries of `~/.ssh/config`; or pass `--tailscale` to enumerate the tailnet directly (`--os windows`/`linux` filters it) for machines you never added to ssh config. **The login user** for a bare host (no `user@`) is resolved from `ssh -G` — so an ssh-config `Host … User fleetuser` block is honoured and shown — or forced with `-u USER` / `$OVERSEER_HOSTS_USER` when it lives nowhere (the common "same user across the whole fleet" case). Each host is probed **live and in parallel**: `SSH` is `ok`/`deny`/`unreach`, `OS` is `linux`/`windows`/`macos`, `DRIVE` is `yes` (Linux with `tmux`+`jq`), `no:tmux`/`no:jq`, or `win*` (a Windows broker target). `ONLINE` is filled from `tailscale status` when the CLI is present. Nothing is stored — reachability is computed each run (a cached health value would just be stale). `--list` prints the inventory without probing; `-t` sets the per-host ssh connect timeout (default 6s). |
+| `hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]` | **Remote (SSH), fleet survey.** Print one line per host — `HOST ONLINE OS SSH DRIVE`, where `HOST` is the **effective `user@host`** — so you can see which machines you can actually drive, *and as which user*, before an `on`/`win`. The inventory (ssh targets to probe) comes from `$OVERSEER_HOSTS` if set, else `$XDG_CONFIG_HOME/overseer/hosts`, else the non-wildcard `Host` entries of `~/.ssh/config`; or pass `--tailscale` to enumerate the tailnet directly (`--os windows`/`linux` filters it) for machines you never added to ssh config. **The login user** for a bare host (no `user@`) is resolved from `ssh -G` — so an ssh-config `Host … User fleetuser` block is honoured and shown — or forced with `-u USER` / `$OVERSEER_HOSTS_USER` when it lives nowhere (the common "same user across the whole fleet" case). Each host is probed **live and in parallel**: `SSH` is `ok`/`deny`/`unreach`, `OS` is `linux`/`windows`/`macos`, `DRIVE` is `yes` (Linux with `tmux`+`jq`), `no:tmux`/`no:jq`, or `win*` (a Windows broker target). `ONLINE` is filled from `tailscale status` when the CLI is present. Nothing is stored — reachability is computed each run (a cached health value would just be stale). `--list` prints the inventory without probing; `-t` sets the per-host ssh connect timeout (default 6s). |
 | `provision [--dry-run] <host>` | **Remote (SSH).** Install the missing Linux **drive** dependencies (`tmux` + `jq`) on a reachable host — the fix for a `hosts` `DRIVE=no:tmux`/`no:jq`. Detects the package manager (`apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk`), installs only what's absent (idempotent), and needs **root or passwordless `sudo`** on the host (it runs non-interactively). `--dry-run` prints the exact command instead of running it. Linux only, and only the base deps — Claude/Codex agents (and every Windows prerequisite) are still set up by hand. |
 | `deploy <host>` | **Remote (SSH).** Copy overseer's `scripts/` to `~/.overseer` on a remote ssh host (via `ssh`+`tar`) so `on` can run there. `<host>` is any ssh target — a `user@host`, a `~/.ssh/config` alias, or a Tailscale MagicDNS name. Run once per host (re-run to update). |
 | `on <host> <command> [args]` | **Remote (SSH).** Run any overseer command on a remote host over ssh and stream the result back — the *whole* program runs remote-side, where its tmux/`/proc`/transcript reads are all co-located, so discovery and completion detection work unchanged. Blocking `chat`/`wait`/`sh` hold one ssh connection while they poll remote-side; one-shots reuse a multiplexed master (`ControlPersist`). Pass `--yes` for remote auto-submit (the confirm gate has no tty over ssh). e.g. `on sandbox chat %0 'hi'`, `on sandbox doctor`. |
-| `winshow <host> [app]` | **Remote (SSH), Windows target.** Open a GUI app — default Windows Terminal, or any Start-menu name / AUMID / full exe path — on the **visible console session** of a remote Windows host. Bridges SSH's Session 0 to the logged-in desktop via a transient interactive scheduled task, so the window appears on the physical screen; resolves the console user dynamically, runs even on battery, and confirms a new top-level window appeared. e.g. `winshow admin@win-host`, `winshow win-host 'Notepad'`. |
-| `winbroker <host>[/name] [pwsh\|claude\|codex] [workdir]` | **Remote (SSH), Windows target.** Start a **visible broker** on the host's console (Session 1, via the same scheduled-task bridge as `winshow`) hosting a **pwsh shell, Claude Code, or Codex** child in a console window the user watches. The broker exposes a machine-wide named pipe (reachable from the invisible SSH Session 0) that speaks `WriteConsoleInput`/`ReadConsoleOutputCharacter` — the Windows analogue of tmux `send-keys`/`capture-pane`, so a plain-SSH host with no tmux is still drivable. Opens in the host's Windows Terminal default directory unless `[workdir]` is given, and starts the child **through the user's PowerShell profile**, so it inherits exactly the environment (API config, aliases, PATH) they get by opening their own terminal and typing the command. Returns once the child has actually painted its first screen. Re-run to switch the child. Drive it with `winpeek`/`winkeys`/`winsh`/`winchat`. |
-| `winlist <host>` | **Remote (SSH), Windows target.** List the overseer brokers running on the host — one line per named broker with its child kind, working directory and whether the child is alive. The Windows peer of `list`; use it when several brokers run side by side (`winbroker <host>/codex2`). |
-| `winpeek <host>[/name]` | **Remote (SSH), Windows target.** Snapshot the broker window's current screen grid — the rendered text of whatever the child (shell or agent TUI) shows. The Windows peer of `peek`. |
-| `winkeys <host>[/name] <key\|text>...` | **Remote (SSH), Windows target.** Inject named keys (`Enter`, `Escape`, `Up`, `Down`, `Tab`, `Backspace`, `C-c`, …) or literal text into the broker child. Text lands as one keystroke burst; submit with a separate `Enter` (a TUI treats a burst-embedded newline as a paste, not a submit). |
-| `winsh <host>[/name] <command> [timeout]` | **Remote (SSH), Windows target.** Run one command line in the broker's **pwsh** child, wait for it via a unique sentinel, print output + exit code. The Windows peer of `sh` (needs `winbroker <host> pwsh`); refuses a broker hosting an agent, so a command can never be typed into a chat box. |
-| `winread <host>[/name]` | **Remote (SSH), Windows target.** Print the last user prompt + last assistant reply from the broker's **claude/codex** child, read from its on-disk transcript with the *same* `transcript.sh` readers (fetched back over ssh). The Windows peer of `read` — prefer it over `winpeek`, which is a noisy TUI screenshot. |
-| `winchat [--yes] [--force] <host>[/name] <prompt\|-> [timeout]` | **Remote (SSH), Windows target.** Send a prompt to the broker's **claude/codex** child, submit it, then wait for the turn by reading the agent's on-disk transcript with the *same* `transcript.sh` readers overseer uses locally (run on the file fetched back over ssh), and print the reply. The Windows peer of `chat` (needs `winbroker <host> claude\|codex`) and it carries the same guards: refuses a mid-turn agent (`--force` bypasses), refuses a Codex message starting with `!`, prepends a space for Claude's `/ ! # @`, clears the input box, places the prompt with newlines injected as the composer's own newline key and verifies it on screen before submitting (so a multi-line prompt arrives intact instead of submitting at its first line), holds a per-host lock while typing, waits for the keypress unless `--yes`, returns the **question** if the agent stops at a prompt, and fails fast if the agent dies mid-turn. The poll is signature-gated — it only refetches the transcript when the broker's reported `mtime:size` changes (the Windows analogue of the local `_file_sig`), so an in-place rewrite is caught too. |
-| `winwait <host>[/name] [timeout]` | **Remote (SSH), Windows target.** Block until the broker's agent finishes its current turn, or return the **question** at once if it is stopped at an interactive prompt. Prints `idle` if it was not busy. The Windows peer of `wait` — use it to resume after a `winchat` timeout instead of re-sending the prompt. |
-| `winstop <host>[/name]` | **Remote (SSH), Windows target.** Stop the broker and its child on the host. |
+| `win <host>[/name] <verb>` | **Remote (SSH), Windows target.** Drive a remote Windows **console broker** over plain ssh — the `win` prefix is to a Windows host what `on <host>` is to a remote Linux one. `<host>[/name]` picks the broker (add `/name` to run several side by side); `<verb>` is one of the shared verbs in the table below (the same vocabulary as the Linux commands). The broker is a **visible** console child (pwsh / Claude Code / Codex) exposing a machine-wide named pipe that speaks `WriteConsoleInput`/`ReadConsoleOutputCharacter` — the Windows analogue of tmux `send-keys`/`capture-pane`, so a plain-SSH host with no tmux is still drivable. Full rationale in [docs/WINDOWS.md](docs/WINDOWS.md). |
 
 `--yes` auto-submits (skips the confirm gate); `--force` skips the mid-turn guard. Pass `-` as the
 message to read a long, multi-line prompt from stdin.
+
+### Windows verbs (`win <host>[/name] <verb>`)
+
+The Windows surface uses the **same verb vocabulary as Linux** behind the `win` prefix — `win <host>
+start` is `start`, `win <host> chat` is `chat`, and so on. (The old fused names `winbroker`, `winchat`,
+`winstop`, … were folded into these verbs.)
+
+| verb | what it does |
+|---|---|
+| **start** `[pwsh\|claude\|codex] [workdir]` | Start/switch a **visible broker** child on the host's console (Session 1, via the scheduled-task bridge). Opens in the host's Windows Terminal default directory unless `[workdir]` is given, and starts the child **through the user's PowerShell profile** (inheriting API config, aliases, PATH). Returns once the child has painted its first screen. Re-run to switch the child. The Windows peer of `start`. |
+| **show** `[app]` | Open a GUI app — default Windows Terminal, or any Start-menu name / AUMID / full exe path — on the host's **visible console session**. Windows-only (no Linux peer). e.g. `win admin@win-host show`, `win win-host show 'Notepad'`. |
+| **list** | List the overseer brokers on the host — one line per named broker with its child kind, working directory and whether the child is alive. The Windows peer of `list`. |
+| **peek** | Snapshot the broker window's current screen grid. The Windows peer of `peek`. |
+| **keys** `<key\|text>...` | Inject named keys (`Enter`, `Escape`, `Up`, `Down`, `Tab`, `Backspace`, `C-c`, …) or literal text into the broker child. Text lands as one keystroke burst; submit with a separate `Enter`. The Windows peer of `keys`. |
+| **sh** `<command> [timeout]` | Run one command line in the broker's **pwsh** child, wait via a unique sentinel, print output + exit code. Needs `win <host> start pwsh`; refuses a broker hosting an agent. The Windows peer of `sh`. |
+| **read** | Print the last user prompt + last assistant reply from the broker's **claude/codex** child, read from its on-disk transcript with the *same* `transcript.sh` readers (fetched back over ssh). The Windows peer of `read`. |
+| **chat** `[--yes] [--force] <prompt\|-> [timeout]` | Send a prompt to the broker's **claude/codex** child, submit it, wait for the turn via the transcript, print the reply. Needs `win <host> start claude\|codex`. Carries the same guards as Linux `chat` — refuses a mid-turn agent (`--force` bypasses), refuses a Codex `!` message, prepends a space for Claude's `/ ! # @`, verifies the pasted prompt on screen before submitting, holds a per-host lock, returns the **question** if the agent stops at a prompt, fails fast if it dies mid-turn. The poll is signature-gated on the broker's reported `mtime:size` (the Windows analogue of the local `_file_sig`). The Windows peer of `chat`. |
+| **wait** `[timeout]` | Block until the broker's agent finishes its current turn, or return the **question** if it stops at an interactive prompt (`idle` if it was not busy). Use it to resume after a `win <host> chat` timeout instead of re-sending. The Windows peer of `wait`. |
+| **stop** | Stop the broker and its child on the host. The Windows peer of `stop`. |
 
 Two environment variables tune the defaults (both validated at startup, so a bad value fails loudly):
 `OVERSEER_TIMEOUT` (default `600`) is the fallback `[timeout]` seconds for `chat`/`wait`/`sh`, and
@@ -121,11 +133,11 @@ files, transcripts and the hook markers. `CODEX_HOME` (default `~/.codex`) is re
 live Codex discovery finds the rollout the running process holds open via `/proc`, so it is unaffected.
 
 For a Windows target, `OVERSEER_WIN_CLAUDE` (default `claude`) and `OVERSEER_WIN_CODEX` (default
-`codex`) name the command `winbroker` launches on that host — set them when the agent is installed
-under another name there, e.g. a wrapper:
+`codex`) name the command `win <host> start` launches on that host — set them when the agent is
+installed under another name there, e.g. a wrapper:
 
 ```
-OVERSEER_WIN_CLAUDE=claudeep overseer winbroker win-host claude
+OVERSEER_WIN_CLAUDE=claudeep overseer win win-host start claude
 ```
 
 The broker's `kind` stays `claude`/`codex`, so turn detection is unaffected. The value must be a bare
@@ -156,33 +168,34 @@ executes, default `$HOME/.overseer/scripts/overseer`) — **change one and you m
 match** — plus `OVERSEER_SSH`, `OVERSEER_SSH_OPTS`, and `OVERSEER_SCP` for the Windows transcript fetch.
 
 The `on`/`deploy` model targets **Linux** (it runs overseer, which needs `/proc` + tmux). A **Windows**
-host in the tailnet is reached differently: overseer can't run there, so the `win*` commands ssh-execute
-PowerShell payloads that put a driveable console on its **visible desktop**. The lifecycle is
-broker → drive → stop:
+host in the tailnet is reached differently: overseer can't run there, so the `win <host> <verb>` commands
+ssh-execute PowerShell payloads that put a driveable console on its **visible desktop**. The lifecycle is
+start → drive → stop:
 
 ```
-overseer winbroker win-host claude C:\repo    # start a VISIBLE claude on the user's desktop
-overseer winlist win-host                     # which brokers exist, their child, alive?
-overseer winchat --yes win-host 'run the tests' 900   # prompt it, wait the turn, print the reply
-overseer winread win-host                     # last prompt + last reply, any time
-overseer winwait win-host 900                 # resume waiting after a timeout instead of re-sending
-overseer winstop win-host                     # stop the broker and its child
+overseer win win-host start claude C:\repo    # start a VISIBLE claude on the user's desktop
+overseer win win-host list                    # which brokers exist, their child, alive?
+overseer win win-host chat --yes 'run the tests' 900   # prompt it, wait the turn, print the reply
+overseer win win-host read                    # last prompt + last reply, any time
+overseer win win-host wait 900                # resume waiting after a timeout instead of re-sending
+overseer win win-host stop                    # stop the broker and its child
 
-overseer winbroker win-host pwsh              # …or a shell instead of an agent
-overseer winsh win-host 'git pull'            # run one line in it, wait, print output + exit code
+overseer win win-host start pwsh              # …or a shell instead of an agent
+overseer win win-host sh 'git pull'           # run one line in it, wait, print output + exit code
 
-overseer winshow admin@win-host           # one-shot cousin: just open a GUI app and return
-overseer winshow win-host 'Notepad'           # any Start-menu name, an AUMID, or a full exe path
+overseer win admin@win-host show              # one-shot cousin: just open a GUI app and return
+overseer win win-host show 'Notepad'          # any Start-menu name, an AUMID, or a full exe path
 ```
 
 Prerequisites, the pipe trust boundary and the security notes for all of this are in
 [docs/WINDOWS.md](docs/WINDOWS.md).
 
 An ssh session on Windows lands in the non-interactive **Session 0**, so a naively launched GUI is
-invisible. `winshow` bridges to the logged-in **console session** with a throwaway interactive scheduled
-task (`-LogonType Interactive` as the console user, resolved live), which also clears the two silent
-traps: a laptop **on battery** (default tasks carry `DisallowStartIfOnBatteries`, so they sit `Queued`
-and never launch — `winshow` disables that) and Windows Terminal's **app-execution-alias** stub (launched
+invisible. `win <host> show` bridges to the logged-in **console session** with a throwaway interactive
+scheduled task (`-LogonType Interactive` as the console user, resolved live), which also clears the two
+silent traps: a laptop **on battery** (default tasks carry `DisallowStartIfOnBatteries`, so they sit
+`Queued` and never launch — `win <host> show` disables that) and Windows Terminal's **app-execution-alias**
+stub (launched
 by AUMID via `explorer.exe shell:AppsFolder\…`, not a direct `CreateProcess`). It errors clearly if no
 user is at the console (locked / logged off). Needs an admin ssh login on the Windows host.
 
@@ -207,7 +220,7 @@ questions — *can I reach it* (`SSH`) and *can I drive it* (`DRIVE`) — and ea
 |---|---|---|
 | **yes** | Linux with `tmux`+`jq` — fully driveable (shell + agents) | — |
 | **no:tmux** / **no:jq** | Linux missing a base dependency | **`overseer provision <host>`** installs them (needs root/passwordless sudo); then re-survey. |
-| **win\*** | a reachable Windows host | use the `win*` commands; needs an **admin** login, a **logged-in console user**, and the broker prerequisites in [docs/WINDOWS.md](docs/WINDOWS.md). |
+| **win\*** | a reachable Windows host | drive it with `win <host> <verb>` (start/chat/…); needs an **admin** login, a **logged-in console user**, and the broker prerequisites in [docs/WINDOWS.md](docs/WINDOWS.md). |
 | **no:macos** | a Mac | not a controller (see [docs/PORTING.md](docs/PORTING.md)); not a tmux drive target. |
 | **-** | `SSH` wasn't `ok` | fix the `SSH` column first. |
 
@@ -268,7 +281,7 @@ simply polls (~2s slower), never blocked.
 ## Caveats
 
 - **The controller is Linux only** (`/proc`), and so is direct pane discovery. Remote Windows consoles
-  are drivable as *targets* (`win*`), but overseer never runs on Windows.
+  are drivable as *targets* (`win <host> <verb>`), but overseer never runs on Windows.
 - **Depends on each agent's internal on-disk layout** — Claude (`~/.claude/sessions/*.json`,
   `~/.claude/projects/*/*.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`) — undocumented and
   may change between releases. If a release breaks discovery, open an issue.

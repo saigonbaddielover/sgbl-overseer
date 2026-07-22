@@ -109,7 +109,7 @@ Check 'src: broker compares the auth token length-first, Ordinal' $true (($broke
 Check 'src: broker writes its claim to state, not the secret'   $true  (($brokerSrc -match 'Set-Content -LiteralPath \$StatePath') -and -not ($brokerSrc -match 'ConvertTo-Json -Compress \| Set-Content -LiteralPath \$Config '))
 Check 'src: broker validates the transcript before emitting'    $true  (($brokerSrc -match 'transcript=\$tx') -and ($brokerSrc -match 'Test-TranscriptPath \$tx'))
 Check 'src: broker kills the whole child tree'                  $true  ($brokerSrc -match 'Stop-Descendants \$childPid')
-Check 'src: broker exposes scrollback + clear for winsh'        $true  (($brokerSrc -match "verb -eq 'SNAPALL'") -and ($brokerSrc -match "verb -eq 'CLEAR'"))
+Check 'src: broker exposes scrollback + clear for win sh'       $true  (($brokerSrc -match "verb -eq 'SNAPALL'") -and ($brokerSrc -match "verb -eq 'CLEAR'"))
 Check 'src: broker logs terminating errors'                     $true  ($brokerSrc -match 'trap \{ Log "FATAL')
 
 Check 'src: client connects anonymously (no impersonation)'     $true  ($clientSrc -match 'TokenImpersonationLevel\]::Anonymous')

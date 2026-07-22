@@ -85,8 +85,8 @@ Claude Code extension surface, or should this be "upgraded" to an MCP server or 
 The product here is not only the executable — the script runs fine from a terminal with no Claude at
 all. The product is the **procedure knowledge**: which commands mutate state, that a running Codex turn
 is interrupted with `Escape` and never `Ctrl-C`, that `menu` needs `Down` for a vertical popup, that
-`winsh` aimed at an agent broker would type the command into a chat box. That knowledge has to reach
-the model at the moment it drives a pane, and nowhere else.
+`win <host> sh` aimed at an agent broker would type the command into a chat box. That knowledge has to
+reach the model at the moment it drives a pane, and nowhere else.
 
 ### Options considered
 
@@ -155,3 +155,40 @@ fills `winbroker`'s create role. Not `spawn`/`kill`, to keep the `win*` symmetry
 
 - A use-case needs overseer to manage sessions with richer lifecycle (persistence, reconnection,
   supervision) — that would push state out of tmux and reopen ADR-0002.
+
+## ADR-0004 — Unifying the Windows surface under `win <host>[/name] <verb>`
+
+**Status:** Accepted (2026-07-22). Supersedes the naming note in ADR-0003.
+
+### Context
+
+The Windows commands were ten fused names — `winbroker`, `winchat`, `winstop`, … — a vocabulary
+parallel to but disjoint from the Linux verbs (`start`, `chat`, `stop`, …). A user had to learn two
+spellings for one concept (`start` vs `winbroker`, `chat` vs `winchat`), and every new Windows
+capability meant a new top-level command. The goal: **one verb vocabulary across both OSes.**
+
+### Options considered
+
+1. **`win` as a transport prefix (chosen).** `win <host>[/name] <verb>` — exactly symmetric with the
+   existing `on <host> <verb>` for remote Linux. `winbroker`→`win … start`, `winchat`→`win … chat`, and
+   so on; `winshow`→`win … show` (a Windows-only verb with no Linux peer). The verb set is now shared,
+   so adding a Windows capability that already exists on Linux (`send`/`slash`/`menu`/`quit`) is a
+   one-line dispatcher entry rather than a new command.
+2. **Auto-route from the target, no prefix** (`overseer chat <winhost>` figures out it is Windows).
+   Rejected: a bare target is ambiguously a local tmux session or a remote host, and distinguishing them
+   needs per-host OS state (config tag or a live probe on every call) — which breaks the stateless design
+   (ADR-0002) that `hosts` deliberately preserves.
+3. **Keep `win*`, add aliases.** Rejected: that is *two* names per concept, the opposite of the ask, and
+   doubles the command-surface parity surface.
+
+### Consequences
+
+- **Breaking rename, no back-compat aliases** — overseer is 0.x with a single user, so "one name only"
+  wins over migration smoothness. A one-line note in `README.md`/`SKILL.md` records the old→new mapping.
+- The command-surface parity gate now sees `win` as one command; a **new tripwire** in `tests/run.sh`
+  asserts the `cmd_win` dispatcher's verb set matches the `win verbs:` line in `--help`, so a verb can't
+  drift undocumented (the role the old per-command rows played).
+- Windows verb docs use **bold** names (`**start**`) in a sub-table, so the parity regex does not mistake
+  them for top-level commands — the same convention the `hosts` remediation tables use.
+- ADR-0003's "keep the `win*` symmetry" naming note is moot: the verbs are now literally shared, not
+  mirrored.

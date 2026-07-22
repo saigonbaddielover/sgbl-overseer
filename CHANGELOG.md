@@ -5,6 +5,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-22
+
+### Changed
+
+- **BREAKING — the Windows commands are unified under one prefix: `win <host>[/name] <verb>`.** The ten
+  fused names are gone; `win` is now a transport prefix, exactly symmetric with `on <host> <verb>` for
+  remote Linux, and the verb after it is the **same vocabulary as the Linux commands**. Mapping:
+  `winbroker`→`win <host> start`, `winchat`→`win <host> chat`, `winwait`→`win <host> wait`,
+  `winread`→`win <host> read`, `winpeek`→`win <host> peek`, `winsh`→`win <host> sh`,
+  `winkeys`→`win <host> keys`, `winlist`→`win <host> list`, `winstop`→`win <host> stop`,
+  `winshow`→`win <host> show`. `chat`'s `--yes`/`--force` now go **after** the verb
+  (`win <host> chat --yes '…'`). No back-compat aliases (0.x, single user). A pure rename — no behaviour
+  change; the delivery, guards, `mtime:size` gating and per-host lock are untouched.
+
+### Internal
+
+- `tests/run.sh` gains a win-verb tripwire: the `cmd_win` dispatcher's verb set must equal the
+  `win verbs:` list in `--help`, so a verb can never drift undocumented. `tests/win-flow.sh` now drives
+  the real `cmd_win` dispatcher. Rationale recorded in `docs/DECISIONS.md` (ADR-0004).
+
 ## [0.20.0] - 2026-07-22
 
 ### Added

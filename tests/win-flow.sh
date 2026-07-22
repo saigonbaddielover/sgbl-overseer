@@ -76,77 +76,78 @@ _stat_only() {
   }
 }
 
-printf -- '-- winchat guards\n'
+printf -- '-- win chat guards\n'
 
-out=$( _mock; MOCK_FETCH_OK=0; cmd_winchat --yes host 'hello' 2>&1 )
-has   "scp failure aborts winchat"            "$out" 'could not fetch the transcript'
+out=$( _mock; MOCK_FETCH_OK=0; cmd_win host chat --yes 'hello' 2>&1 )
+has   "scp failure aborts win chat"           "$out" 'could not fetch the transcript'
 has   "scp failure names the --force bypass"  "$out" '--force'
 lacks "scp failure never submits"             "$(calls)" 'key '
 lacks "scp failure never pastes"              "$(calls)" 'paste '
 has   "scp failure releases the lock"         "$(calls)" 'unlock'
 
-out=$( _mock; MOCK_FETCH_OK=0; cmd_winchat --yes --force host 'hello' 2>&1 )
+out=$( _mock; MOCK_FETCH_OK=0; cmd_win host chat --yes --force 'hello' 2>&1 )
 has   "--force proceeds past a scp failure"   "$(calls)" 'key -Name Enter'
 
-out=$( _mock; MOCK_TXFILE="$FIX/claude-busy.jsonl"; cmd_winchat --yes host 'hello' 2>&1 )
+out=$( _mock; MOCK_TXFILE="$FIX/claude-busy.jsonl"; cmd_win host chat --yes 'hello' 2>&1 )
 has   "mid-turn agent refuses the send"       "$out" 'looks mid-turn'
 lacks "mid-turn refusal never submits"        "$(calls)" 'key '
 
-out=$( _mock; MOCK_TXFILE="$FIX/claude-busy.jsonl"; cmd_winchat --yes --force host 'hello' 2>&1 )
+out=$( _mock; MOCK_TXFILE="$FIX/claude-busy.jsonl"; cmd_win host chat --yes --force 'hello' 2>&1 )
 has   "--force bypasses the mid-turn guard"   "$(calls)" 'key -Name Enter'
 
-out=$( _mock; MOCK_KIND=pwsh; cmd_winchat --yes host 'hello' 2>&1 )
-has   "winchat refuses a pwsh broker"         "$out" 'not an agent'
+out=$( _mock; MOCK_KIND=pwsh; cmd_win host chat --yes 'hello' 2>&1 )
+has   "win chat refuses a pwsh broker"        "$out" 'not an agent'
 lacks "pwsh refusal never pastes"             "$(calls)" 'paste '
 
-out=$( _mock; MOCK_ALIVE=False; cmd_winchat --yes host 'hello' 2>&1 )
-has   "winchat refuses a dead child"          "$out" 'has exited'
+out=$( _mock; MOCK_ALIVE=False; cmd_win host chat --yes 'hello' 2>&1 )
+has   "win chat refuses a dead child"         "$out" 'has exited'
 
-out=$( _mock; MOCK_KIND=codex; cmd_winchat --yes host '!rm -rf /' 2>&1 )
+out=$( _mock; MOCK_KIND=codex; cmd_win host chat --yes '!rm -rf /' 2>&1 )
 has   "codex refuses a leading exclamation"   "$out" 'shell command'
 lacks "codex refusal never pastes"            "$(calls)" 'paste '
 
-printf -- '-- winchat cleanup\n'
+printf -- '-- win chat cleanup\n'
 
-out=$( _mock; MOCK_KEY_OK=0; cmd_winchat --yes host 'hello' 2>&1 )
+out=$( _mock; MOCK_KEY_OK=0; cmd_win host chat --yes 'hello' 2>&1 )
 has   "failed submit is reported"             "$out" 'could not submit'
 has   "failed submit releases the lock"       "$(calls)" 'unlock'
-( _mock; MOCK_KEY_OK=0; cmd_winchat --yes host 'hello' ) >/dev/null 2>&1
+( _mock; MOCK_KEY_OK=0; cmd_win host chat --yes 'hello' ) >/dev/null 2>&1
 eq    "failed submit clears the box"          "yes" "$(cleared_after_paste)"
 
-out=$( _mock; MOCK_SNAP='> something else entirely'; cmd_winchat --yes host 'hello' 2>&1 )
+out=$( _mock; MOCK_SNAP='> something else entirely'; cmd_win host chat --yes 'hello' 2>&1 )
 has   "unverified delivery aborts"            "$out" 'could not place/verify'
 lacks "unverified delivery never submits"     "$(calls)" 'key '
-( _mock; MOCK_SNAP='> something else entirely'; cmd_winchat --yes host 'hello' ) >/dev/null 2>&1
+( _mock; MOCK_SNAP='> something else entirely'; cmd_win host chat --yes 'hello' ) >/dev/null 2>&1
 eq    "unverified delivery clears the box"    "yes" "$(cleared_after_paste)"
 
 printf -- '-- an unreachable broker is reported, never silent\n'
 
 _dead() { _mock; _win_client() { printf '%s %s\n' "$1" "${2:-}" >> "$MOCK_LOG"; printf 'ERR connect failed\n'; return 3; }; }
-for c in "cmd_winsh host/x 'echo hi' 5" "cmd_winchat --yes host/x hi" "cmd_winwait host/x 5" "cmd_winread host/x" "cmd_winkeys host/x Enter"; do
-  out=$( _dead; eval "$c" 2>&1 )
-  has "${c%% *} reports an unreachable broker" "$out" 'did not answer'
-  has "${c%% *} names the broker and host"     "$out" "on host"
+for c in "host/x sh 'echo hi' 5" "host/x chat --yes hi" "host/x wait 5" "host/x read" "host/x keys Enter"; do
+  verb=$(printf '%s' "$c" | awk '{print $2}')
+  out=$( _dead; eval "cmd_win $c" 2>&1 )
+  has "win $verb reports an unreachable broker" "$out" 'did not answer'
+  has "win $verb names the broker and host"     "$out" "on host"
 done
 
 printf -- '-- a tampered transcript path is refused before any fetch\n'
 
-out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_winread host/x 2>&1 )
-has   "winread refuses a metachar transcript path" "$out" 'unexpected transcript path'
-lacks "winread never fetches a bad path"           "$(calls)" 'fetch '
+out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_win host/x read 2>&1 )
+has   "win read refuses a metachar transcript path" "$out" 'unexpected transcript path'
+lacks "win read never fetches a bad path"           "$(calls)" 'fetch '
 
-out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_winwait host/x 5 2>&1 )
-has   "winwait refuses a metachar transcript path" "$out" 'unexpected transcript path'
+out=$( _mock; MOCK_TX='C:/Users/x/rollout-a & calc.jsonl'; cmd_win host/x wait 5 2>&1 )
+has   "win wait refuses a metachar transcript path" "$out" 'unexpected transcript path'
 
-out=$( _mock; MOCK_TX='C:/Users/John Doe/.claude/projects/x/y.jsonl'; cmd_winread host/x 2>&1 )
-has   "winread accepts a spaced-username path"     "$(calls)" 'fetch '
+out=$( _mock; MOCK_TX='C:/Users/John Doe/.claude/projects/x/y.jsonl'; cmd_win host/x read 2>&1 )
+has   "win read accepts a spaced-username path"     "$(calls)" 'fetch '
 
-out=$( _mock; MOCK_KIND=shell; cmd_winsh host/x 'Get-Date' 5 2>&1 )
+out=$( _mock; MOCK_KIND=shell; cmd_win host/x sh 'Get-Date' 5 2>&1 )
 sh_payload=$(awk '/^sh -B64 /{print $3}' "$TMP/calls" | head -1 | base64 -d 2>/dev/null)
-has "winsh resets LASTEXITCODE before the command" "$sh_payload" 'global:LASTEXITCODE = $null'
-has "winsh still runs the command after the reset" "$sh_payload" '$null; Get-Date;'
+has "win sh resets LASTEXITCODE before the command" "$sh_payload" 'global:LASTEXITCODE = $null'
+has "win sh still runs the command after the reset" "$sh_payload" '$null; Get-Date;'
 
-out=$( _mock; MOCK_SNAP=$'Do you want to proceed?\n> 1. Yes\n  2. No'; cmd_winchat --yes host 'hello' 2>&1 )
+out=$( _mock; MOCK_SNAP=$'Do you want to proceed?\n> 1. Yes\n  2. No'; cmd_win host chat --yes 'hello' 2>&1 )
 has   "a blocking menu is named, not a generic failure" "$out" 'not sent'
 has   "the blocking question itself is shown"           "$out" '1. Yes'
 lacks "a blocking menu never submits"                   "$(calls)" 'key '
