@@ -44,9 +44,14 @@ overseer/skills/overseer/scripts/overseer doctor --live   # runtime preflight + 
 
 - **`tests/run.sh`** — asserts the pure transcript/screen parsers against fixtures in `tests/fixtures/`,
   for both harnesses. No tmux, no agent, fast. This is the drift tripwire; add a fixture + assertion
-  whenever you touch a parser.
+  whenever you touch a parser. It also unit-drives the command guards through stubbed `tmux` — the `sh`
+  POSIX-shell gate and the `start`/`stop` name/child/existing-session refusals plus the self-kill guard
+  (`_ok_session_name`, `_startgate`, `_stopgate`) — and asserts command-surface parity + the doc
+  contracts, so a new command or a broken guard fails CI here.
 - **`tests/stress.sh`** — exercises the live paths fixtures can't: multi-pane concurrency, per-pane lock
-  serialization, large-rollout reader perf, and mid-turn crash liveness. Needs tmux; the checks above use
+  serialization, large-rollout reader perf, mid-turn crash liveness, and the `start`/`stop` session
+  lifecycle (create → drive via `sh` → destroy, plus `stop %N` killing one pane of a multi-pane session;
+  a real-codex readiness check self-skips when `codex` isn't on `PATH`). Needs tmux; the checks above use
   throwaway *shell* panes, so no Claude/Codex is required. Set `OVERSEER_STRESS_CODEX_PANE=%N` to also
   assert the Codex `!`-refuse safety against a real Codex pane. Run it by hand when touching the
   delivery, lock, or reader paths. The reader-perf section (C) measures on an 18 MB rollout; run by

@@ -117,3 +117,41 @@ the model at the moment it drives a pane, and nowhere else.
 - Another tool (not Claude Code) needs to call overseer programmatically — an MCP surface would then buy
   interoperability the skill cannot.
 - The tool grows genuinely long-lived state that must outlive a single command.
+
+## ADR-0003 — Linux `start`/`stop`: overseer creates and destroys its own tmux sessions
+
+**Status:** Accepted (2026-07-22).
+
+### Context
+
+overseer began **attach-only** on Linux — it drove panes someone else opened, and the docs said it
+"never opens a pane." The Windows side always had a lifecycle (`winbroker` creates a broker, `winstop`
+destroys it) because a plain-SSH Windows host has no pane to find. That asymmetry meant a throwaway
+Linux session had to be hand-created before overseer could drive it, with no teardown — awkward for the
+tailnet create/reuse/destroy use-case. v0.17.0 closes the gap.
+
+### Options considered
+
+1. **Detached session (chosen).** `start <name>` runs `tmux new-session -d`; the user attaches to
+   watch. Behaves identically local and via `on`, and stays one-shot/stateless — the session lives in
+   tmux, not in overseer.
+2. **New window inside an already-attached session** (visible immediately). Rejected as the default: it
+   needs a pre-existing attached session and doesn't translate to remote `on`, where there is usually
+   no session to inject into.
+3. **Do nothing / keep attach-only.** Rejected: leaves Linux behind Windows for the lifecycle the
+   tailnet use-case wants.
+
+Naming: `stop` is the peer of the existing `winstop` (matching `winpeek↔peek`, `winsh↔sh`); `start`
+fills `winbroker`'s create role. Not `spawn`/`kill`, to keep the `win*` symmetry.
+
+### Consequences
+
+- Still stateless/one-shot (ADR-0002 holds): no new store — the session is tmux state.
+- `start <name> claude|codex` rides the `/proc` discovery seam (`_harness_of`) for readiness, so it is
+  Linux-only like the rest; `start <name> shell` and `stop` are pure tmux (see `docs/PORTING.md`).
+- `stop` refuses to kill the session (or `%N` pane) overseer runs in; the guard is inert under `on`.
+
+### Revisit this decision if
+
+- A use-case needs overseer to manage sessions with richer lifecycle (persistence, reconnection,
+  supervision) — that would push state out of tmux and reopen ADR-0002.

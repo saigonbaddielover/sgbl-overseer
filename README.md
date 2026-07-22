@@ -43,8 +43,9 @@ server-side.
   keystroke injection and the screen buffer lives client-side). Windows targets use the broker
   instead — see [docs/WINDOWS.md](docs/WINDOWS.md) for its prerequisites and security model.
 - **jq** — for transcript reading.
-- **ssh, scp, base64, iconv** — only for the remote (`on`) and Windows (`win*`) commands; the local
-  tmux commands need none of them.
+- **ssh** — required by the remote `on`/`deploy` commands and all `win*`. **tar** — by `deploy` only
+  (it ships `scripts/` over ssh + tar). **scp, base64, iconv** — by the Windows `win*` commands only.
+  The local tmux commands need none of these.
 - **bash ≥ 4.1** — the script uses named file descriptors and associative arrays; stock macOS bash 3.2
   is too old (install a newer bash and run overseer under it).
 - **Claude Code** — this is a plugin for it.
@@ -87,8 +88,8 @@ All work goes through one script; the agent calls it as
 | `wait <target> [timeout]` | **Agent (Claude/Codex).** Block until the current turn finishes — or return early if the agent stops at a prompt awaiting input. |
 | `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (no subcommand = `status`). `status` = one line each (harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for a started-but-unused agent and `(not an agent)` for a pane that stopped being one); `read`; `wait [timeout]`; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes. A thin fan-out over the per-pane commands — each pane keeps its own guards, and one failing pane never aborts the batch. |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI (Claude: two Ctrl-C; Codex: one), revealing the shell, keeping tmux/pane alive. |
-| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session named `<name>` running a shell (default), Claude Code or Codex; for an agent it waits until the harness has actually come up before returning. Watch it with `tmux attach -t <name>`, then drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name that isn't `[A-Za-z0-9_-]` or one already in use. |
-| `stop <target>` | **Delete (Linux tmux).** Tear down what `start` made (or any tmux target): a `%N` pane → `kill-pane` (that one pane); a session name → `kill-session` (the whole session), which SIGHUPs its child agent/shell. Refuses to kill the session overseer itself is running in. The Linux peer of `winstop`. |
+| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session named `<name>` running a shell (default), Claude Code or Codex; for an agent it waits until the harness has actually come up before returning. Watch it with `tmux attach -t <name>`, then drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name that isn't `[A-Za-z0-9_-]`, one already in use, or a `workdir` that does not exist. |
+| `stop <target>` | **Delete (Linux tmux).** Tear down what `start` made (or any tmux target): a `%N` pane → `kill-pane` (that one pane); a session name → `kill-session` (the whole session), which SIGHUPs its child agent/shell. Refuses to kill the session — or, for a `%N` target, the pane — overseer itself is running in. The Linux peer of `winstop`. |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) that `send`/`chat` can't. The leading `/` is optional — `slash <target> resume` works too. |
 | `menu <target> <item> [nav-key]` | **Any pane.** Navigate a tab bar / list until `<item>` is highlighted (verify-driven). Default nav key `Right` suits a Claude tab bar; Codex popups are vertical — pass `Down`. |
 | `sh <target> <command> [timeout]` | **Shell.** Run one command line, wait, print output + exit code. |
@@ -205,8 +206,8 @@ user is at the console (locked / logged off). Needs an admin ssh login on the Wi
 - **Concurrent invocations are serialized per pane.** Every command that types into a pane
   (`send`/`chat`/`sh`/`quit`/`slash`/`menu`) takes a `flock` on that pane first, so two overseer runs
   can't interleave keystrokes into the same box; the lock is released before the reply wait, so a long
-  `chat` doesn't block a `read`. Where `flock` is missing — or the lock is still contended after 30s —
-  it proceeds unlocked rather than failing.
+  `chat` doesn't block a `read`. Where `flock` is missing it proceeds unlocked; if `flock` is present
+  but the lock is still held after 30s it aborts with an error rather than risk interleaving keystrokes.
 - **Harness detection** is by pane process: a Claude pane owns `~/.claude/sessions/<pid>.json`; a Codex
   pane has a descendant process named `codex` (so a 0-turn Codex is detected before it opens a rollout).
   Codex's transcript is the `~/.codex/sessions/**/rollout-*.jsonl` the process holds open, read straight
@@ -260,7 +261,7 @@ simply polls (~2s slower), never blocked.
 
 ## Compatibility
 
-Last verified live against **Claude Code 2.1.215** and **Codex 0.144.6**. Because overseer reads each
+Last verified live against **Claude Code 2.1.217** and **Codex 0.144.6**. Because overseer reads each
 agent's internal on-disk layout (above), an upstream update *could* change that layout and break
 discovery. Rather than pin exact versions, `overseer doctor` prints the running versions and then
 *probes the contract directly*: it runs overseer's own transcript readers against the newest on-disk
