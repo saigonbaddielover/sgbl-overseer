@@ -83,6 +83,13 @@ eq "menu: reverse-video highlighted tab is active"  "active" \
 eq "menu: reverse-video tab, other tab not active"  "no" \
    "$(_ia "$(printf 'Tab1  \033[7m Sonnet \033[27m  Haiku\n')" Haiku)"
 
+_wia() { _win_is_active_text "$1" "$2" && echo active || echo no; }
+eq "win menu: cursor '>' row with the item is active"   "active" "$(_wia "$(printf '  4. Opus\n> 5. Sonnet\n')" Sonnet)"
+eq "win menu: glyph cursor row is active"               "active" "$(_wia "$(printf '❯ 2. Codex\n')" Codex)"
+eq "win menu: a row without a cursor is not active"     "no"     "$(_wia "$(printf '  5. Haiku\n')" Haiku)"
+eq "win menu: the item on another row is not active"    "no"     "$(_wia "$(printf '> 4. Sonnet\n  5. Haiku\n')" Haiku)"
+eq "win menu: cursor does not jump past another name"   "no"     "$(_wia "$(printf '> Sonnet  Haiku\n')" Haiku)"
+
 eq "posix shell accepts bash"   "yes" "$(_is_posix_shell bash && echo yes || echo no)"
 eq "posix shell accepts -zsh"   "yes" "$(_is_posix_shell -zsh && echo yes || echo no)"
 eq "posix shell refuses fish"   "no"  "$(_is_posix_shell fish && echo yes || echo no)"

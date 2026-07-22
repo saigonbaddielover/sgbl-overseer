@@ -120,6 +120,37 @@ lacks "unverified delivery never submits"     "$(calls)" 'key '
 ( _mock; MOCK_SNAP='> something else entirely'; cmd_win host chat --yes 'hello' ) >/dev/null 2>&1
 eq    "unverified delivery clears the box"    "yes" "$(cleared_after_paste)"
 
+printf -- '-- win send (fire-and-confirm, no reply wait)\n'
+
+out=$( _mock; MOCK_KIND=pwsh; cmd_win host send --yes 'hello' 2>&1 )
+has   "win send refuses a pwsh broker"        "$out" 'not an agent'
+lacks "win send pwsh refusal never pastes"    "$(calls)" 'paste '
+
+out=$( _mock; MOCK_TXFILE="$FIX/claude-busy.jsonl"; cmd_win host send --yes 'hello' 2>&1 )
+has   "win send refuses a mid-turn agent"     "$out" 'looks mid-turn'
+lacks "win send mid-turn never submits"       "$(calls)" 'key '
+
+_mock; _stat_only; MOCK_TXFILE="$FIX/claude-busy.jsonl"; MOCK_MTIME=101; MOCK_SIZE=200
+rc=0; _win_wait_started claude 0 '100:200' 3 "$TMP/tx" || rc=$?
+eq  "win send confirms a started (busy) turn" "0" "$rc"
+
+_mock; _stat_only; MOCK_ALIVE=False
+rc=0; _win_wait_started claude 0 '1:1' 3 "$TMP/tx" || rc=$?
+eq  "win send fails fast on a dead child"     "3" "$rc"
+
+_mock; _stat_only
+rc=0; _win_wait_started claude 0 '100:200' 1 "$TMP/tx" || rc=$?
+eq  "win send keeps waiting on no change"     "1" "$rc"
+
+printf -- '-- win slash / quit refuse a non-agent broker\n'
+
+out=$( _mock; MOCK_KIND=pwsh; cmd_win host slash model 2>&1 )
+has   "win slash refuses a pwsh broker"       "$out" 'not an agent'
+lacks "win slash pwsh refusal never pastes"   "$(calls)" 'paste '
+
+out=$( _mock; MOCK_KIND=pwsh; cmd_win host quit 2>&1 )
+has   "win quit refuses a pwsh broker"        "$out" 'nothing to quit'
+
 printf -- '-- an unreachable broker is reported, never silent\n'
 
 _dead() { _mock; _win_client() { printf '%s %s\n' "$1" "${2:-}" >> "$MOCK_LOG"; printf 'ERR connect failed\n'; return 3; }; }

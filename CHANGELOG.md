@@ -5,6 +5,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-22
+
+### Added
+
+- **Windows drive-surface parity — `send`, `slash`, `menu`, `quit` join the `win` verbs.** The Windows
+  broker now has the same drive verbs as a Linux pane:
+  - `win <host> send [--yes] [--force] <prompt|->` — place + submit + confirm the turn *started*, without
+    waiting for the reply (the fire-and-continue peer of `chat`; shares `chat`'s placement + guards via a
+    new `_win_place`, and confirms the start with `_win_wait_started`).
+  - `win <host> slash </cmd>` — run a slash command (`/model`, …), pasted raw (no leading-`/` space
+    guard) so the TUI actually enters command mode.
+  - `win <host> menu <item> [nav-key]` — navigate a popup to a highlighted row. The console grid has **no
+    colour**, so the new pure `_win_is_active_text` reads the highlight from the row's cursor glyph
+    (`>`/`❯`/`›`) instead of ANSI SGR; default nav key `Down` (Windows popups are vertical).
+  - `win <host> quit` — Ctrl-C the agent TUI (twice for Claude) to leave the broker's pwsh, the lighter
+    peer of `stop`.
+  Cheap to add now that the surface is unified (v0.21.0): each is one dispatcher entry + handler. Covered
+  by new `tests/run.sh` (`_win_is_active_text`) and `tests/win-flow.sh` (send/slash/quit guards,
+  `_win_wait_started` sig-gating) checks.
+
 ## [0.21.0] - 2026-07-22
 
 ### Changed
