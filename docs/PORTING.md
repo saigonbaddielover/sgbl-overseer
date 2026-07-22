@@ -21,7 +21,10 @@ isn't there.
 | `_p_fds <pid>` | every open file's path, one per line | `for fd in /proc/<pid>/fd/*; do readlink "$fd"; done` | `lsof -p <pid> -Fn` and emit each `n`-prefixed path (used to find the Codex rollout the process holds open) |
 
 Implement these four and the entire discovery layer (`_agent_pid`, `_descendants`, `_codex_rollout`,
-`_codex_pid`, `_panes`, `_target_ctx`) works unchanged — it never touches `/proc` directly.
+`_codex_pid`, `_panes`, `_target_ctx`) works unchanged — it never touches `/proc` directly. `start`'s
+agent-readiness poll rides the same seam (it waits on `_harness_of`), so until the four functions are
+implemented `start <name> claude|codex` creates the session but times out after 30s waiting for the
+harness to be detected; `start <name> shell` and `stop` are pure tmux and work regardless.
 
 ### Detection logic that stays the same
 
@@ -64,6 +67,9 @@ OVERSEER_OS=Darwin overseer doctor        # [FAIL] not Linux (Darwin) … see do
 overseer doctor                           # should pass the OS check
 overseer list --all                       # your tmux panes + commands
 # then drive a real Claude/Codex pane and confirm read/chat/send/wait, exactly as on Linux.
+overseer start p shell                     # pure tmux — works before the seam is done
+overseer start a codex                     # needs the seam — readiness must resolve, not time out
+overseer stop a                            # tears the session down
 ```
 
 Land a port the same way as any change: branch → PR → green CI → merge, with a note in the PR describing

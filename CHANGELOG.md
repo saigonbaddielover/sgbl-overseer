@@ -5,6 +5,36 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-22
+
+Documentation-accuracy pass — no code change. A three-agent audit against the code surfaced a handful
+of stale claims (some predating 0.17.0).
+
+### Fixed
+
+- **Corrected the per-pane `flock` contention wording (README, SKILL).** Both stated a lock still
+  contended after 30s "proceeds unlocked rather than failing." `_lock_pane` actually **aborts with an
+  error** ("another overseer command has held the lock … retry when it finishes") in that case — only a
+  *missing* `flock` proceeds unlocked. The docs had collapsed the two outcomes and assigned the wrong
+  one to the timeout.
+- **README requirements list: `tar` was missing and `scp`/`base64`/`iconv` were misattributed to `on`.**
+  Per the actual `_need` map: `on` needs only `ssh`; `deploy` needs `ssh` + `tar`; `scp`/`base64`/`iconv`
+  are used only by the Windows `win*` commands.
+- **README "Compatibility" bumped to the live-verified Claude Code 2.1.217** (was 2.1.215; Codex 0.144.6
+  unchanged).
+
+### Documentation
+
+- `start`/`stop`: documented the `%N`-pane arm of the self-kill guard and `start`'s non-existent-`workdir`
+  refusal (README, SKILL, safety rule 8).
+- **SECURITY.md** now covers `start`/`stop` as local side effects (the tmux analogue of
+  `winbroker`/`winstop`).
+- **CONTRIBUTING.md** lists the new `tests/stress.sh` start/stop lifecycle checks (F/F2/F3) and the
+  `tests/run.sh` stubbed-`tmux` command-guard units.
+- **docs/PORTING.md** notes that `start`'s agent-readiness poll rides the `/proc` discovery seam.
+- **docs/DECISIONS.md** adds **ADR-0003** recording the attach-only → lifecycle decision and the
+  detached-session / `start`-`stop` naming choices.
+
 ## [0.17.0] - 2026-07-22
 
 Linux tmux lifecycle, to match what the Windows side already had: overseer can now **create and destroy**

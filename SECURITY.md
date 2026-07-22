@@ -11,6 +11,12 @@ Keystrokes go into a tmux pane on the controller host, or on another Linux host 
 `deploy` + `on`. Identity is ssh's own — overseer stores no credentials, runs no daemon, and keeps no
 token store. A remote `chat`/`send` has no tty, so it **fails closed** unless `--yes` is passed.
 
+`start` and `stop` are local side effects, the tmux analogue of the Windows `winbroker`/`winstop`
+pair: `start` spawns a new detached tmux session running a shell or agent (on the controller, or via
+`on` the remote host), and `stop` destroys a `%N` pane or a whole named session, SIGHUPping its child.
+`stop` is destructive — run it only when asked, prefer `quit` to merely leave an agent's TUI, and note
+it refuses to kill the session (or, for a `%N` target, the pane) overseer itself is running in.
+
 ## Windows targets (the `win*` commands)
 
 These are remote execution on somebody's live desktop and deserve the same care as `sh`:

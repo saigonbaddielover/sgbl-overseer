@@ -42,8 +42,8 @@ from stdin.
 | `wait <target> [timeout]` | **Agent pane (Claude or Codex).** Block until the target's current turn finishes — or return early with the question if the agent stops at an interactive prompt awaiting your input. | read-only |
 | `fleet [status\|read\|wait\|send\|chat] [args]` | **Every agent pane at once** (a fan-out over the per-pane commands; each pane is handled in isolation so one failure never aborts the batch). With no subcommand it defaults to `status`, which prints one line per pane — harness + `idle`/`busy`/`awaiting`, plus `idle(0-turn)` for an agent that hasn't taken a turn yet and `(not an agent)` for a pane that stopped being one. `read` and `wait [timeout]` fan those out; `send`/`chat [--yes] [--force] <msg>` **broadcast** the same message to all agent panes, each still subject to its own confirm/mid-turn guard. Use `status` to survey many sessions; broadcast only when the user explicitly asks to message every agent. | status/read/wait read-only · send/chat **SIDE EFFECT** |
 | `quit <target>` | **Agent (Claude/Codex).** Exit the TUI to reveal the shell underneath, **keeping tmux and the pane alive** (Claude: two Ctrl-C; Codex: one), then confirms the pane returned to a shell. | **SIDE EFFECT** |
-| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session `<name>` running a shell (default), Claude Code or Codex; for an agent it blocks until the harness has actually come up before returning. The user watches it with `tmux attach -t <name>`; you drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name outside `[A-Za-z0-9_-]` or one already in use. | **SIDE EFFECT** (spawns a session) |
-| `stop <target>` | **Delete (Linux tmux).** Tear down a `start`ed session (or any tmux target): a `%N` pane → `kill-pane` (that pane); a session name → `kill-session` (the whole session + its child, via SIGHUP). Refuses to kill the session overseer is running in. The Linux peer of `winstop`; use `quit` instead when you only want to leave an agent's TUI but keep the pane. | **SIDE EFFECT** (destroys a session) |
+| `start <name> [shell\|claude\|codex] [workdir]` | **Create (Linux tmux).** Open a new **detached** tmux session `<name>` running a shell (default), Claude Code or Codex; for an agent it blocks until the harness has actually come up before returning. The user watches it with `tmux attach -t <name>`; you drive it with `chat`/`send`/`sh`/… Runs identically locally and via `on <host> start …`. Refuses a name outside `[A-Za-z0-9_-]`, one already in use, or a `workdir` that does not exist. | **SIDE EFFECT** (spawns a session) |
+| `stop <target>` | **Delete (Linux tmux).** Tear down a `start`ed session (or any tmux target): a `%N` pane → `kill-pane` (that pane); a session name → `kill-session` (the whole session + its child, via SIGHUP). Refuses to kill the session — or, for a `%N` target, the pane — overseer is running in. The Linux peer of `winstop`; use `quit` instead when you only want to leave an agent's TUI but keep the pane. | **SIDE EFFECT** (destroys a session) |
 | `slash <target> </cmd>` | **Agent (Claude/Codex).** Run a slash command (`/model`, `/status`, ...; Claude also `/resume`, `/clear`) — which `send`/`chat` can't, since they keep a leading `/` literal. The leading `/` is optional (`slash <t> resume` works). A command that opens a menu is then navigated with `menu`/`keys`. | **SIDE EFFECT** |
 | `menu <target> <item> [nav-key]` | **Any pane** (no harness gate — it works off what is highlighted on screen). Drive a tab bar / highlighted list until `<item>` is the active one, verify-driven (one key → re-read highlight → repeat; never counts keys). Default key `Right` (a tab bar); pass `Down` for a vertical list — Codex popups (`/model`, `/approvals`) are vertical, so use `Down`. Does not select — follow with `keys <t> Enter`. | **SIDE EFFECT** |
 | `sh <target> <command> [timeout]` | **Shell pane.** Run one command line, **wait for it to finish**, print its output + exit code. Pagers are neutralized (`git log`/`man`/`less` won't seize the pane) and stdin is `/dev/null` (a command that reads stdin won't hang); on timeout it Ctrl-C's the pane so it isn't left stuck. `cd`/`export` still persist. Refuses any pane that is not an idle POSIX-ish shell (`sh`, `bash`, `zsh`, `dash`, `ksh`, `mksh`, `ash`) — its wrapper is POSIX-only, so fish/tcsh/csh/nu/xonsh/elvish are rejected up front rather than hanging to timeout. If the output outran the pane's scrollback, it reports the exit code and says the output can't be captured whole — re-run with `> out.txt 2>&1` and read the file. | **SIDE EFFECT** |
@@ -276,9 +276,9 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
 8. **`start` spawns a process; `stop` destroys a session.** `start` opens a new detached tmux session
    running a shell or agent; `stop` kills a `%N` pane or a whole named session and its child. Both are
    side effects on the user's machine — run them only when the user asked to create or tear down a
-   session. `stop` is destructive (the child dies); it refuses to kill the session overseer itself runs
-   in but will kill any other named session. Prefer `quit` when the user only wants to leave an agent's
-   TUI while keeping the pane.
+   session. `stop` is destructive (the child dies); it refuses to kill the session (or, for a `%N`
+   target, the pane) overseer itself runs in, but will kill any other named session. Prefer `quit` when
+   the user only wants to leave an agent's TUI while keeping the pane.
 
 ## Gotchas the script already handles (do not re-derive)
 
@@ -300,8 +300,9 @@ WHOLE thing, do not stop at the first screen. The reliable loop:
   scrolled view — scroll back down (or `keys <t> q`) if you need the live screen.
 - **Two overseer runs against the same pane** can't interleave keystrokes: every command that types
   (`send`/`chat`/`sh`/`quit`/`slash`/`menu`) takes a per-pane `flock` first and releases it before the
-  reply wait, so a long `chat` never blocks a `read` of the same pane. Without `flock` — or if the lock
-  is still contended after 30s — it proceeds unlocked rather than failing.
+  reply wait, so a long `chat` never blocks a `read` of the same pane. Without `flock` it proceeds
+  unlocked; if `flock` is present but the lock is still held after 30s it aborts with an error rather
+  than proceeding unlocked.
 - **Control bytes in a message** (a raw ESC, or an embedded `\e[201~` paste-end marker) are stripped
   before the bracketed paste, so pasted content can't terminate the paste early and inject keystrokes.
 - **The input line is read at the cursor row** (`#{cursor_y}`), not "the last prompt glyph on screen",
