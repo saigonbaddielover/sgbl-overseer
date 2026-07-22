@@ -78,6 +78,12 @@ _ts_state() {
     END { if (!found) print "?" }
   '
 }
+_ts_hosts() {
+  awk -v osf="$1" '$1 ~ /^100\./ && NF >= 4 {
+    if (osf != "" && $4 != osf) next
+    print $1
+  }'
+}
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
 # prune by pane command first (claude runs as `claude`, codex as `node`) so the fd scan only runs
 # on plausible panes.

@@ -121,6 +121,10 @@ eq "ts-state: offline peer"  "offline" "$(printf '100.0.0.2 winbox u windows off
 eq "ts-state: idle peer"     "idle"    "$(printf '100.0.0.3 idlebox u linux idle, tx 1 rx 2\n' | _ts_state idlebox)"
 eq "ts-state: known but no session" "-" "$(printf '100.0.0.4 seenbox u linux -\n' | _ts_state seenbox)"
 eq "ts-state: unknown host"  "?"       "$(printf '100.0.0.1 sandbox u linux active\n' | _ts_state ghost)"
+eq "ts-hosts: ips, all os" "100.0.0.1
+100.0.0.2" "$(printf '# Health:\n100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts '')"
+eq "ts-hosts: filter by os" "100.0.0.2" "$(printf '100.0.0.1 sandbox u linux active\n100.0.0.2 winbox tag windows -\n' | _ts_hosts windows)"
+eq "ts-hosts: ignores non-peer lines" "100.0.0.1" "$(printf 'Health check:\n  - some warning\n100.0.0.1 sandbox u linux active\n' | _ts_hosts '')"
 
 _startgate() {
   ( _need() { :; }; _nap() { :; }

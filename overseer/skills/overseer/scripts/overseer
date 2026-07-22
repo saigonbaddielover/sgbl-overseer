@@ -88,7 +88,7 @@ main() {
       printf '  doctor [--live]            preflight: Linux/proc, tmux, jq, session state; --live also drives a throwaway pane\n'
       printf '  deploy <host>              copy overseer to ~/.overseer on a remote ssh host (once, before "on")\n'
       printf '  on    <host> <command> [args]  run any overseer command on a remote ssh host (ControlPersist-reused; e.g. on sandbox chat %%0 hi)\n'
-      printf '  hosts [--list] [-t secs]   survey the fleet: per host print online/os/ssh/drive-able (inventory from OVERSEER_HOSTS or ~/.ssh/config; online from tailscale)\n'
+      printf '  hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t secs]  survey the fleet: per host print user@host + online/os/ssh/drive-able (inventory from OVERSEER_HOSTS, ~/.ssh/config, or --tailscale; -u sets the login user for bare hosts)\n'
       printf '  winshow <host> [app]       open a GUI app (default Windows Terminal) on the VISIBLE console session of a remote WINDOWS ssh host\n'
       printf '  winbroker <host>[/name] [pwsh|claude|codex] [workdir]  start a VISIBLE broker on a remote WINDOWS console hosting a shell/agent (/name to run several side by side)\n'
       printf '  winlist <host>             list the overseer brokers running on a remote WINDOWS host (name, child, alive)\n'

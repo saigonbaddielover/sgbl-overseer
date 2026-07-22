@@ -445,8 +445,14 @@ cmd_deploy() {
 }
 _host_probe() {
   local target="$1" timeout="$2" ts="$3"
-  local hp="${target##*@}" out rc os ssh drive online
+  local hp="${target##*@}" out rc os ssh drive online duser
   hp="${hp%%:*}"
+  case "$target" in
+    *@*) duser="${target%@*}" ;;
+    # shellcheck disable=SC2086
+    *)   duser=$(${OVERSEER_SSH:-ssh} -G "$hp" 2>/dev/null | awk 'tolower($1) == "user" { print $2; exit }') ;;
+  esac
+  [ -n "$duser" ] || duser='?'
   online=$(printf '%s\n' "$ts" | _ts_state "$hp") || online='?'
   # shellcheck disable=SC2086
   if out=$(${OVERSEER_SSH:-ssh} -o BatchMode=yes -o ConnectTimeout="$timeout" ${OVERSEER_SSH_OPTS:-} "$target" 'uname -s; command -v tmux; command -v jq' 2>&1); then
@@ -457,6 +463,7 @@ _host_probe() {
   if [ "$rc" = 255 ]; then
     case "$out" in
       *"Permission denied"*|*publickey*|*password*) ssh=deny ;;
+      *"Host key verification failed"*|*"IDENTIFICATION HAS CHANGED"*) ssh=hostkey ;;
       *) ssh=unreach ;;
     esac
     os='?'; drive='-'
@@ -474,20 +481,30 @@ _host_probe() {
       *) os='?'; drive='?' ;;
     esac
   fi
-  printf '%s\t%s\t%s\t%s\t%s\n' "$target" "$online" "$os" "$ssh" "$drive"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$duser@$hp" "$online" "$os" "$ssh" "$drive"
 }
 cmd_hosts() {
   _need ssh
-  local listonly=0 timeout=6
+  local listonly=0 timeout=6 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
+  local u='usage: overseer hosts [--list] [--tailscale] [--os NAME] [-u USER] [-t seconds]'
   while :; do case "${1:-}" in
     --list) listonly=1; shift ;;
-    -t) [ -n "${2:-}" ] || _die "usage: overseer hosts [--list] [-t seconds]"; timeout="$2"; shift 2 ;;
-    -*) _die "unknown flag '$1' (usage: overseer hosts [--list] [-t seconds])" ;;
+    --tailscale) usetail=1; shift ;;
+    --os) [ -n "${2:-}" ] || _die "$u"; osfilter="$2"; shift 2 ;;
+    -u) [ -n "${2:-}" ] || _die "$u"; defuser="$2"; shift 2 ;;
+    -t) [ -n "${2:-}" ] || _die "$u"; timeout="$2"; shift 2 ;;
+    -*) _die "unknown flag '$1' ($u)" ;;
     *) break ;;
   esac; done
   _uint "$timeout"
+  [ -n "$osfilter" ] && [ "$usetail" = 0 ] && _die "--os only applies with --tailscale"
+  local ts=''
+  command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true)
   local src content cfg="$HOME/.ssh/config" xdg="${XDG_CONFIG_HOME:-$HOME/.config}/overseer/hosts"
-  if [ -n "${OVERSEER_HOSTS:-}" ]; then
+  if [ "$usetail" = 1 ]; then
+    [ -n "$ts" ] || _die "--tailscale needs the tailscale CLI and a running tailnet (tailscale status returned nothing)"
+    src="tailscale status${osfilter:+ (os=$osfilter)}"; content=$(printf '%s\n' "$ts" | _ts_hosts "$osfilter")
+  elif [ -n "${OVERSEER_HOSTS:-}" ]; then
     [ -r "$OVERSEER_HOSTS" ] || _die "OVERSEER_HOSTS is set but not readable: $OVERSEER_HOSTS"
     src="$OVERSEER_HOSTS"; content=$(_hosts_parse < "$OVERSEER_HOSTS")
   elif [ -r "$xdg" ]; then
@@ -498,15 +515,17 @@ cmd_hosts() {
     _die "no fleet inventory found. Set OVERSEER_HOSTS to a file of ssh targets (one 'user@host' or ssh-config alias per line), create $xdg, or add Host entries to $cfg"
   fi
   local -a targets=(); local t
-  while IFS= read -r t; do [ -n "$t" ] && targets+=("$t"); done <<< "$content"
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    case "$t" in *@*) : ;; *) [ -n "$defuser" ] && t="$defuser@$t" ;; esac
+    targets+=("$t")
+  done <<< "$content"
   [ "${#targets[@]}" -gt 0 ] || _die "no hosts in $src"
   if [ "$listonly" = 1 ]; then
     printf 'source: %s\n' "$src"
     printf '%s\n' "${targets[@]}"
     return 0
   fi
-  local ts=''
-  command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true)
   local tmp="${TMPDIR:-/tmp}/overseer-hosts-$UID-$$"
   mkdir -p "$tmp" 2>/dev/null || _die "could not create temp dir: $tmp"
   local i=0
