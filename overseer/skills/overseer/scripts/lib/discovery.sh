@@ -84,6 +84,35 @@ _ts_hosts() {
     print $1
   }'
 }
+_provision_script() {
+  printf 'DRY=%s\n' "${1:-0}"
+  cat <<'PSCRIPT'
+set -e
+os=$(uname -s 2>/dev/null || echo unknown)
+[ "$os" = Linux ] || { echo "not Linux ($os) - provision installs Linux tmux/jq only; Windows/macOS deps are set up manually"; exit 3; }
+miss=''
+for c in tmux jq; do command -v "$c" >/dev/null 2>&1 || miss="$miss $c"; done
+miss=${miss# }
+[ -n "$miss" ] || { echo "already has tmux + jq - nothing to install"; exit 0; }
+if command -v apt-get >/dev/null 2>&1; then pm="export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y $miss"
+elif command -v dnf >/dev/null 2>&1; then pm="dnf install -y $miss"
+elif command -v yum >/dev/null 2>&1; then pm="yum install -y $miss"
+elif command -v pacman >/dev/null 2>&1; then pm="pacman -Sy --noconfirm $miss"
+elif command -v zypper >/dev/null 2>&1; then pm="zypper --non-interactive install $miss"
+elif command -v apk >/dev/null 2>&1; then pm="apk add $miss"
+else echo "missing:$miss but no known package manager (apt/dnf/yum/pacman/zypper/apk) - install manually"; exit 4; fi
+if [ "$(id -u)" = 0 ]; then pre=''
+elif command -v sudo >/dev/null 2>&1; then pre='sudo -n '
+else echo "missing:$miss and cannot install (not root, no sudo)"; exit 5; fi
+if [ "$DRY" = 1 ]; then echo "would install:$miss via: ${pre}sh -c \"$pm\""; exit 0; fi
+echo "installing:$miss ..."
+${pre}sh -c "$pm" || { echo "install failed for:$miss (needs root or passwordless sudo)"; exit 6; }
+still=''
+for c in tmux jq; do command -v "$c" >/dev/null 2>&1 || still="$still $c"; done
+still=${still# }
+[ -z "$still" ] && echo "installed:$miss - now drivable" || { echo "still missing:$still after install"; exit 7; }
+PSCRIPT
+}
 # emit: <session>\t<pane_id>\t<pane_pid>\t<harness>\t<cwd> for each agent pane (claude or codex).
 # prune by pane command first (claude runs as `claude`, codex as `node`) so the fd scan only runs
 # on plausible panes.
