@@ -69,6 +69,20 @@ eq "a real menu under a numbered reply is found" "awaiting" \
 eq "a menu not starting at 1 still counts"    "awaiting" "$(_aw "$(printf 'Proceed?\n❯ 4. Yes\n  5. No\n')")"
 eq "a lone marked option is not a menu"       "no"       "$(_aw "$(printf 'Proceed?\n❯ 1. Yes\n')")"
 
+_ia() { _is_active_text "$1" "$2" && echo active || echo no; }
+eq "menu: numbered highlighted item is active"      "active" \
+   "$(_ia "$(printf '   \033[38;5;153m❯\033[39m \033[38;5;246m4. \033[38;5;153mSonnet\033[39m   Sonnet 5\n')" Sonnet)"
+eq "menu: a different highlighted item is not active" "no" \
+   "$(_ia "$(printf '   \033[38;5;153m❯\033[39m \033[38;5;246m5. \033[38;5;153mHaiku\033[39m\n')" Sonnet)"
+eq "menu: a line without the cursor is not active"  "no" \
+   "$(_ia "$(printf '     \033[38;5;246m4. Sonnet\033[39m\n')" Sonnet)"
+eq "menu: cursor does not jump past another name"   "no" \
+   "$(_ia "$(printf '\033[7m❯ Sonnet\033[27m  Haiku  Opus\n')" Haiku)"
+eq "menu: reverse-video highlighted tab is active"  "active" \
+   "$(_ia "$(printf 'Tab1  \033[7m Sonnet \033[27m  Haiku\n')" Sonnet)"
+eq "menu: reverse-video tab, other tab not active"  "no" \
+   "$(_ia "$(printf 'Tab1  \033[7m Sonnet \033[27m  Haiku\n')" Haiku)"
+
 eq "posix shell accepts bash"   "yes" "$(_is_posix_shell bash && echo yes || echo no)"
 eq "posix shell accepts -zsh"   "yes" "$(_is_posix_shell -zsh && echo yes || echo no)"
 eq "posix shell refuses fish"   "no"  "$(_is_posix_shell fish && echo yes || echo no)"

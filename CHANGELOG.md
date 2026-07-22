@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-07-22
+
+### Fixed
+
+- **`menu` could not make a numbered popup item active on current Claude Code (e.g. `/model`).**
+  Claude 2.1.217 draws the selected row as `❯ 4. Sonnet` with the cursor, the number prefix and the
+  label in separate 256-colour runs (`38;5;153`), so `_is_active`'s highlight match missed it on two
+  counts: its colour list only knew the old cyan (`38;5;6`), and its cursor-glyph alternative required
+  the label to sit *immediately* after the glyph (`❯ *label`), which the `N. ` prefix breaks. `menu`
+  then cycled the whole list and gave up. The glyph alternative now tolerates a numbered prefix and
+  inline SGR escapes between the cursor and the label — without jumping past another item's name on a
+  single-line tab bar. The pure matcher was split out as `_is_active_text` and pinned by fixtures in
+  `tests/run.sh` (the detector previously had **no** test coverage, which is why the drift went
+  unnoticed).
+
 ## [0.17.1] - 2026-07-22
 
 Documentation-accuracy pass — no code change. A three-agent audit against the code surfaced a handful
