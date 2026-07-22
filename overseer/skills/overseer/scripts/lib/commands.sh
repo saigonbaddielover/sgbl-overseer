@@ -421,6 +421,14 @@ cmd_doctor() {
   [ "$live" = 1 ] && { _doctor_live || bad=1; }
   [ "$bad" = 0 ] && printf 'doctor: OK\n' || { printf 'doctor: failed checks above — overseer will not work correctly until they are fixed\n'; return 1; }
 }
+_on_ensure_deployed() {
+  local host="$1" bin="$2" cmdir="$3"
+  # shellcheck disable=SC2086
+  ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
+    -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "[ -f \"$bin\" ]" >/dev/null 2>&1 && return 0
+  printf 'overseer: %s has no overseer yet — deploying it once...\n' "$host" >&2
+  cmd_deploy "$host" >&2 || _die "auto-deploy to $host failed — deploy it manually (overseer deploy $host), or set OVERSEER_NO_AUTODEPLOY=1 to skip this"
+}
 cmd_on() {
   _need ssh
   local host="${1:-}"; shift || true
@@ -430,6 +438,7 @@ cmd_on() {
   mkdir -p "$cmdir" 2>/dev/null || true
   local rargs='' a
   for a in "$@"; do rargs="$rargs '${a//\'/\'\\\'\'}'"; done
+  [ -z "${OVERSEER_REMOTE_BIN:-}" ] && [ -z "${OVERSEER_NO_AUTODEPLOY:-}" ] && _on_ensure_deployed "$host" "$bin" "$cmdir"
   # shellcheck disable=SC2086
   exec ${OVERSEER_SSH:-ssh} -o ControlMaster=auto -o "ControlPath=$cmdir/%C" -o ControlPersist=60s \
     -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "$bin$rargs"

@@ -139,6 +139,16 @@ eq "provision: knows apt and dnf"       "2"   "$(_provision_script 0 | grep -cE 
 eq "provision: sudo -n when not root"   "yes" "$(_provision_script 0 | grep -q 'sudo -n' && echo yes || echo no)"
 eq "provision: refuses non-Linux"       "yes" "$(_provision_script 0 | grep -q 'not Linux' && echo yes || echo no)"
 
+_ensure() { ( _need() { :; }
+  ssh() { return "$OVR_SSHRC"; }
+  cmd_deploy() { printf 'DEPLOYED %s\n' "$1"; return "$OVR_DEPRC"; }
+  OVR_SSHRC="$1"; OVR_DEPRC="${2:-0}"
+  _on_ensure_deployed host "\$HOME/.overseer/scripts/overseer" /tmp/x ) 2>&1; }
+eq "on: bin present skips auto-deploy"    "yes" "$(case "$(_ensure 0)" in *DEPLOYED*) echo no ;; *) echo yes ;; esac)"
+eq "on: bin missing auto-deploys"         "yes" "$(case "$(_ensure 1)" in *'DEPLOYED host'*) echo yes ;; *) echo no ;; esac)"
+eq "on: auto-deploy announces itself"     "yes" "$(case "$(_ensure 1)" in *'deploying it once'*) echo yes ;; *) echo no ;; esac)"
+eq "on: a failed auto-deploy is fatal"    "yes" "$(case "$(_ensure 1 1)" in *'auto-deploy to host failed'*) echo yes ;; *) echo no ;; esac)"
+
 _startgate() {
   ( _need() { :; }; _nap() { :; }
     _harness_of() { printf claude; }
@@ -307,7 +317,7 @@ _hasre() { grep -qE "$2" "$1" && echo yes || echo no; }
 eq "README states the Linux controller / Windows target support model" "yes" "$(_hasre "$README" '^## Support model')"
 eq "SKILL frontmatter names the Windows broker commands" "yes" "$(sed -n '2p' "$SKILL" | grep -qE 'win <host>.*(start|chat)' && echo yes || echo no)"
 eq "SKILL scope section covers both target kinds" "yes" "$(_hasre "$SKILL" '^## Scope: what runs where')"
-for v in OVERSEER_REMOTE_DIR OVERSEER_REMOTE_BIN OVERSEER_SSH OVERSEER_SSH_OPTS OVERSEER_SCP OVERSEER_WIN_CLAUDE OVERSEER_WIN_CODEX OVERSEER_TIMEOUT OVERSEER_POLL_INTERVAL; do
+for v in OVERSEER_REMOTE_DIR OVERSEER_REMOTE_BIN OVERSEER_NO_AUTODEPLOY OVERSEER_SSH OVERSEER_SSH_OPTS OVERSEER_SCP OVERSEER_WIN_CLAUDE OVERSEER_WIN_CODEX OVERSEER_TIMEOUT OVERSEER_POLL_INTERVAL; do
   eq "README documents $v" "yes" "$(_has "$README" "$v")"
 done
 
