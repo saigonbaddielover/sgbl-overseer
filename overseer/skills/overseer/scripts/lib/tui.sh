@@ -25,11 +25,15 @@ _wake_pane() {
 # is <name> the HIGHLIGHTED (active) item on screen? true if a reverse-video or background-color
 # SGR sits just before the name in the colored capture — how a TUI marks the active tab / selected
 # row. lets menu navigation be verify-driven instead of counting keystrokes.
+_is_active_text() {
+  local cap="$1" ne="$2" e; e=$(printf '\033')
+  printf '%s\n' "$cap" \
+    | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›]((${e}\[[0-9;]*m)|[^A-Za-z${e}])*${ne}"
+}
 _is_active() {
-  local pane="$1" name="$2" e ne; e=$(printf '\033')
+  local pane="$1" name="$2" ne
   ne=$(printf '%s' "$name" | sed 's/[][(){}.^$*+?|\\]/\\&/g')   # match the label literally
-  tmux capture-pane -e -p -t "$pane" 2>/dev/null \
-    | grep -qE "${e}\[([0-9;]*;)?7m *${ne}|${e}\[[0-9;]*48;[0-9;]+m *${ne}|${e}\[[0-9;]*38;5;6m.*${ne}|[❯▶►●➤›] *${ne}"
+  _is_active_text "$(tmux capture-pane -e -p -t "$pane" 2>/dev/null)" "$ne"
 }
 _awaiting_text() {
   local cap="$1" g="${2:-❯›}" galt='' i out
