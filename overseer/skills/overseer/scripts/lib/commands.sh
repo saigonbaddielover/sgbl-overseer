@@ -157,13 +157,12 @@ _fleet_status() {
   else state='idle(0-turn)'; fi
   printf '%s\t%s\t%s\n' "$pane" "$kind" "$state"
 }
-cmd_fleet() {
-  _need tmux
+_fleet_local() {
   local action="${1:-status}"; shift || true
   local -a targets=(); local sess pane pid kind cwd p msg
   local -a fl=()
   while IFS=$'\t' read -r sess pane pid kind cwd; do targets+=("$pane"); done < <(_panes)
-  [ "${#targets[@]}" -gt 0 ] || _die "no agent panes found (see: overseer list)"
+  [ "${#targets[@]}" -gt 0 ] || return 1
   case "$action" in
     status) _need jq; printf 'PANE\tHARNESS\tSTATE\n'; for p in "${targets[@]}"; do ( _fleet_status "$p" ) || true; done ;;
     read)   _need jq; for p in "${targets[@]}"; do printf '===== %s =====\n' "$p"; ( cmd_read "$p" ) || printf '(unavailable)\n'; done ;;
@@ -177,8 +176,51 @@ cmd_fleet() {
         if [ "$action" = send ]; then ( cmd_send ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true
         else ( cmd_chat ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true; fi
       done ;;
-    *) _die "usage: overseer fleet [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]  (no subcommand = status)" ;;
+    *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]  (no subcommand = status)" ;;
   esac
+}
+cmd_fleet() {
+  _need tmux
+  local remote=0 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
+  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]'
+  while :; do case "${1:-}" in
+    --hosts) remote=1; shift ;;
+    --tailscale) remote=1; usetail=1; shift ;;
+    --os) [ -n "${2:-}" ] || _die "$u"; osfilter="$2"; remote=1; shift 2 ;;
+    -u) [ -n "${2:-}" ] || _die "$u"; defuser="$2"; shift 2 ;;
+    *) break ;;
+  esac; done
+  [ -n "$osfilter" ] && [ "$usetail" = 0 ] && _die "--os only applies with --tailscale"
+  local action="${1:-status}"
+  if [ "$remote" = 0 ]; then
+    _fleet_local "$@" || _die "no agent panes found (see: overseer list)"
+    return
+  fi
+  _need ssh
+  case "$action" in
+    send|chat) case " $* " in *" --yes "*) : ;; *) _die "overseer fleet --hosts $action needs --yes (a fleet-wide broadcast to remote agents cannot prompt per-pane): overseer fleet --hosts $action --yes <msg>" ;; esac ;;
+  esac
+  local ts=''
+  [ "$usetail" = 1 ] && { command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true); }
+  _inventory "$usetail" "$osfilter" "$defuser" "$ts"
+  local -a hosts=("${_INV_TARGETS[@]}")
+  printf '===== local =====\n'
+  ( _fleet_local "$@" ) || printf '(no local agent panes)\n'
+  local tmp="${TMPDIR:-/tmp}/overseer-fleet-$UID-$$"
+  mkdir -p "$tmp" 2>/dev/null || _die "could not create temp dir: $tmp"
+  local i=0 h
+  for h in "${hosts[@]}"; do
+    ( cmd_on "$h" fleet "$@" >"$tmp/$i" 2>&1 ) &
+    i=$((i + 1))
+  done
+  wait
+  i=0
+  for h in "${hosts[@]}"; do
+    printf '===== %s =====\n' "$h"
+    cat "$tmp/$i" 2>/dev/null || printf '(unavailable)\n'
+    i=$((i + 1))
+  done
+  rm -rf "$tmp" 2>/dev/null || true
 }
 # turn-based interaction with a PLAIN shell pane (not a claude TUI): run one command line, wait for
 # it to finish, print its output + exit code. completion is a unique sentinel line the wrapped
@@ -449,7 +491,7 @@ cmd_deploy() {
   [ -n "$host" ] || _die "usage: overseer deploy <host>   (copy overseer's scripts to ~/.overseer on a remote ssh host, do this once before 'overseer on <host> ...')"
   local dest="${OVERSEER_REMOTE_DIR:-.overseer}"
   # shellcheck disable=SC2086
-  tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
+  tar -C "$_dir/.." -cf - scripts | ${OVERSEER_SSH:-ssh} -o ConnectTimeout=10 ${OVERSEER_SSH_OPTS:-} "$host" "mkdir -p \"\$HOME/$dest\" && exec tar -C \"\$HOME/$dest\" -xf -" \
     && printf 'overseer: deployed scripts to %s:~/%s/\n' "$host" "$dest"
 }
 _host_probe() {
@@ -492,6 +534,31 @@ _host_probe() {
   fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$duser@$hp" "$online" "$os" "$ssh" "$drive"
 }
+_inventory() {
+  local usetail="$1" osfilter="$2" defuser="$3" ts="$4"
+  local src content cfg="$HOME/.ssh/config" xdg="${XDG_CONFIG_HOME:-$HOME/.config}/overseer/hosts"
+  if [ "$usetail" = 1 ]; then
+    [ -n "$ts" ] || _die "--tailscale needs the tailscale CLI and a running tailnet (tailscale status returned nothing)"
+    src="tailscale status${osfilter:+ (os=$osfilter)}"; content=$(printf '%s\n' "$ts" | _ts_hosts "$osfilter")
+  elif [ -n "${OVERSEER_HOSTS:-}" ]; then
+    [ -r "$OVERSEER_HOSTS" ] || _die "OVERSEER_HOSTS is set but not readable: $OVERSEER_HOSTS"
+    src="$OVERSEER_HOSTS"; content=$(_hosts_parse < "$OVERSEER_HOSTS")
+  elif [ -r "$xdg" ]; then
+    src="$xdg"; content=$(_hosts_parse < "$xdg")
+  elif [ -r "$cfg" ]; then
+    src="$cfg (Host entries)"; content=$(_ssh_config_hosts < "$cfg")
+  else
+    _die "no fleet inventory found. Set OVERSEER_HOSTS to a file of ssh targets (one 'user@host' or ssh-config alias per line), create $xdg, or add Host entries to $cfg"
+  fi
+  _INV_SRC="$src"; _INV_TARGETS=()
+  local t
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    case "$t" in *@*) : ;; *) [ -n "$defuser" ] && t="$defuser@$t" ;; esac
+    _INV_TARGETS+=("$t")
+  done <<< "$content"
+  [ "${#_INV_TARGETS[@]}" -gt 0 ] || _die "no hosts in $src"
+}
 cmd_hosts() {
   _need ssh
   local listonly=0 timeout=6 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
@@ -509,27 +576,8 @@ cmd_hosts() {
   [ -n "$osfilter" ] && [ "$usetail" = 0 ] && _die "--os only applies with --tailscale"
   local ts=''
   command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true)
-  local src content cfg="$HOME/.ssh/config" xdg="${XDG_CONFIG_HOME:-$HOME/.config}/overseer/hosts"
-  if [ "$usetail" = 1 ]; then
-    [ -n "$ts" ] || _die "--tailscale needs the tailscale CLI and a running tailnet (tailscale status returned nothing)"
-    src="tailscale status${osfilter:+ (os=$osfilter)}"; content=$(printf '%s\n' "$ts" | _ts_hosts "$osfilter")
-  elif [ -n "${OVERSEER_HOSTS:-}" ]; then
-    [ -r "$OVERSEER_HOSTS" ] || _die "OVERSEER_HOSTS is set but not readable: $OVERSEER_HOSTS"
-    src="$OVERSEER_HOSTS"; content=$(_hosts_parse < "$OVERSEER_HOSTS")
-  elif [ -r "$xdg" ]; then
-    src="$xdg"; content=$(_hosts_parse < "$xdg")
-  elif [ -r "$cfg" ]; then
-    src="$cfg (Host entries)"; content=$(_ssh_config_hosts < "$cfg")
-  else
-    _die "no fleet inventory found. Set OVERSEER_HOSTS to a file of ssh targets (one 'user@host' or ssh-config alias per line), create $xdg, or add Host entries to $cfg"
-  fi
-  local -a targets=(); local t
-  while IFS= read -r t; do
-    [ -n "$t" ] || continue
-    case "$t" in *@*) : ;; *) [ -n "$defuser" ] && t="$defuser@$t" ;; esac
-    targets+=("$t")
-  done <<< "$content"
-  [ "${#targets[@]}" -gt 0 ] || _die "no hosts in $src"
+  _inventory "$usetail" "$osfilter" "$defuser" "$ts"
+  local src="$_INV_SRC"; local -a targets=("${_INV_TARGETS[@]}"); local t
   if [ "$listonly" = 1 ]; then
     printf 'source: %s\n' "$src"
     printf '%s\n' "${targets[@]}"
