@@ -179,10 +179,49 @@ _fleet_local() {
     *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]  (no subcommand = status)" ;;
   esac
 }
+_fleet_survey() {
+  local tmp="$1"; shift
+  local i=0 h
+  ( _fleet_local status 2>/dev/null | awk 'NR>1 { print "local\t" $0 }' >"$tmp/s0" ) &
+  for h in "$@"; do
+    i=$((i + 1))
+    ( cmd_on "$h" fleet status 2>/dev/null | awk -v h="$h" 'NR>1 { print h "\t" $0 }' >"$tmp/s$i" ) &
+  done
+  wait
+  i=0
+  while [ "$i" -le "$#" ]; do cat "$tmp/s$i" 2>/dev/null; i=$((i + 1)); done
+}
+_fleet_gate() {
+  local msg="$1" dry="$2" tmp="$3"; shift 3
+  local surv; surv=$(_fleet_survey "$tmp" "$@")
+  local -a recv=() skip=()
+  local host pane kind state
+  while IFS=$'\t' read -r host pane kind state; do
+    [ -n "$pane" ] || continue
+    case "$state" in
+      idle*) recv+=("$(printf '%-26s %-6s %s' "$host" "$pane" "$kind")") ;;
+      *)     skip+=("$(printf '%-26s %-6s %s' "$host" "$pane" "$state")") ;;
+    esac
+  done <<< "$surv"
+  printf 'message:\n  %s\n\n' "$msg"
+  if [ "${#recv[@]}" -eq 0 ]; then
+    printf 'no idle agent anywhere in the fleet — nothing sent\n'
+    [ "${#skip[@]}" -gt 0 ] && { printf 'not idle:\n'; printf '  %s\n' "${skip[@]}"; }
+    return 1
+  fi
+  printf 'will send to %s idle agent(s):\n' "${#recv[@]}"
+  printf '  %s\n' "${recv[@]}"
+  [ "${#skip[@]}" -gt 0 ] && { printf 'skipping %s pane(s) not idle:\n' "${#skip[@]}"; printf '  %s\n' "${skip[@]}"; }
+  [ "$dry" = 1 ] && { printf '\n--dry-run: nothing sent\n'; return 1; }
+  printf '\n--- press Enter to send to all %s, Ctrl-C to abort: ' "${#recv[@]}"
+  read -r _ </dev/tty 2>/dev/null || _die "aborted (no confirmation received; nothing was sent)"
+  printf '\n'
+  return 0
+}
 cmd_fleet() {
   _need tmux
   local remote=0 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
-  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]'
+  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] [--dry-run] <msg>|chat [--yes] [--force] [--dry-run] <msg>]'
   while :; do case "${1:-}" in
     --hosts) remote=1; shift ;;
     --tailscale) remote=1; usetail=1; shift ;;
@@ -197,17 +236,32 @@ cmd_fleet() {
     return
   fi
   _need ssh
+  local yes=0 dry=0 msg=''
+  local -a fwd=()
   case "$action" in
-    send|chat) case " $* " in *" --yes "*) : ;; *) _die "overseer fleet --hosts $action needs --yes (a fleet-wide broadcast to remote agents cannot prompt per-pane): overseer fleet --hosts $action --yes <msg>" ;; esac ;;
+    send|chat)
+      shift
+      while :; do case "${1:-}" in
+        --yes) yes=1; shift ;;
+        --force) fwd+=(--force); shift ;;
+        --dry-run) dry=1; shift ;;
+        *) break ;;
+      esac; done
+      msg="${1:-}"
+      [ -n "$msg" ] || _die "usage: overseer fleet --hosts $action [--yes] [--force] [--dry-run] <message>  (broadcasts to every idle agent in the fleet)"
+      set -- "$action" --yes ${fwd[@]+"${fwd[@]}"} "$msg" ;;
   esac
   local ts=''
   [ "$usetail" = 1 ] && { command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true); }
   _inventory "$usetail" "$osfilter" "$defuser" "$ts"
   local -a hosts=("${_INV_TARGETS[@]}")
-  printf '===== local =====\n'
-  ( _fleet_local "$@" ) || printf '(no local agent panes)\n'
   local tmp="${TMPDIR:-/tmp}/overseer-fleet-$UID-$$"
   mkdir -p "$tmp" 2>/dev/null || _die "could not create temp dir: $tmp"
+  if [ -n "$msg" ] && { [ "$yes" = 0 ] || [ "$dry" = 1 ]; }; then
+    _fleet_gate "$msg" "$dry" "$tmp" "${hosts[@]}" || { rm -rf "$tmp" 2>/dev/null || true; return 0; }
+  fi
+  printf '===== local =====\n'
+  ( _fleet_local "$@" ) || printf '(no local agent panes)\n'
   local i=0 h
   for h in "${hosts[@]}"; do
     ( cmd_on "$h" fleet "$@" >"$tmp/$i" 2>&1 ) &

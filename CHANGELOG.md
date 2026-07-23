@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-22
+
+### Added
+
+- **A fleet-wide broadcast now previews its blast radius and asks once.** `fleet --hosts send|chat` used
+  to *require* `--yes` — a remote pane has no tty, so the per-pane confirm was simply dropped, which made
+  the widest-reaching command in overseer the only one with no human gate. It now runs a **read-only
+  status sweep first** (costs no agent turn, and warms the `ControlMaster` the real send then reuses),
+  prints the message plus **exactly which idle agents would receive it** and which panes it will skip as
+  `busy`/`awaiting`, and asks for **one confirmation** covering the whole batch. Local panes are included
+  in the preview and the confirm, so you are asked once rather than once per pane.
+  - `--dry-run` stops after the preview and sends nothing.
+  - `--yes` skips the preview entirely (scripts/cron) — the previous behaviour, now opt-in instead of
+    mandatory.
+  - No idle agent anywhere → says so and exits without prompting.
+  - No tty → fails closed ("aborted; nothing was sent").
+  The preview is a snapshot: an agent that goes busy between preview and delivery is refused by its own
+  mid-turn guard, so the list errs toward **skipping**, never toward sending wider than shown.
+- Docs now state the risk plainly: every idle agent runs the broadcast in **its own** repo/cwd, so an
+  imperative message hits N unrelated projects.
+
 ## [0.24.0] - 2026-07-22
 
 ### Added
