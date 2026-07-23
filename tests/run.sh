@@ -143,6 +143,19 @@ host-b" "$(_inv 0 '')"
 eq "inventory: --tailscale with empty status dies" "yes" \
   "$( ( _inventory 1 '' '' '' ) 2>&1 | grep -q 'tailscale needs' && echo yes || echo no)"
 
+_gate() { ( _need() { :; }
+  _fleet_survey() { printf 'local\t%%1\tclaude\tidle\nlocal\t%%2\tclaude\tbusy\nh\t%%0\tcodex\tidle(0-turn)\nh\t%%3\tclaude\tawaiting\n'; }
+  _fleet_gate "msg" "$1" . h ) 2>&1; }
+eq "fleet gate: idle (incl 0-turn) are the recipients" "yes" "$(case "$(_gate 1)" in *'will send to 2 idle'*) echo yes ;; *) echo no ;; esac)"
+eq "fleet gate: busy + awaiting are skipped"           "yes" "$(case "$(_gate 1)" in *'skipping 2 pane(s)'*)  echo yes ;; *) echo no ;; esac)"
+eq "fleet gate: --dry-run sends nothing"               "yes" "$(case "$(_gate 1)" in *'dry-run: nothing sent'*) echo yes ;; *) echo no ;; esac)"
+eq "fleet gate: --dry-run stops the broadcast"         "1"   "$(_gate 1 >/dev/null 2>&1; echo $?)"
+_gatenone() { ( _need() { :; }
+  _fleet_survey() { printf 'local\t%%2\tclaude\tbusy\n'; }
+  _fleet_gate "msg" 0 . h ) 2>&1; }
+eq "fleet gate: no idle agent stops before any prompt" "yes" "$(case "$(_gatenone)" in *'no idle agent anywhere'*) echo yes ;; *) echo no ;; esac)"
+eq "fleet gate: no idle agent returns stop"            "1"   "$(_gatenone >/dev/null 2>&1; echo $?)"
+
 eq "provision: --dry-run threads DRY=1" "yes" "$(_provision_script 1 | grep -qx 'DRY=1' && echo yes || echo no)"
 eq "provision: defaults to DRY=0"       "yes" "$(_provision_script | grep -qx 'DRY=0' && echo yes || echo no)"
 eq "provision: targets tmux and jq"     "yes" "$(_provision_script 0 | grep -q 'for c in tmux jq' && echo yes || echo no)"
