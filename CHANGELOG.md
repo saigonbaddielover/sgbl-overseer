@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-24
+
+### Fixed
+
+- **`chat` binds the reply it prints to *your* message, not "the latest reply."** When the target agent
+  is itself orchestrating — spawning background tasks — a `task-notification` turn can run *right after*
+  the turn that answered a queued `chat` message. The old reader (`_last_reply`, "the most recent
+  assistant text") would then print that notification turn's reply instead of the answer to your message
+  (a real, timing-dependent mis-attribution: the exact `your-reply → task-notification → other-reply`
+  sequence showed up in live testing and only poll timing avoided the wrong read). `chat` now reads the
+  first completed assistant turn *after your prompt* (`_reply_after_last_prompt`), which is immune to any
+  later `task-notification` or background turn. Affects only `chat` (the only command that prints a
+  reply); `send`/`wait` never read reply text. Claude only — Codex has no task-notification injection, so
+  its last-`task_complete` reader is already correct.
+
 ## [0.27.0] - 2026-07-24
 
 ### Changed

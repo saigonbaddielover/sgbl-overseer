@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"tn-1","origin":{"kind":"human"},"message":{"content":"Q1"}}
+{"type":"assistant","sessionId":"tn-1","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"ANS1"}]}}
+{"type":"user","sessionId":"tn-1","origin":{"kind":"task-notification"},"message":{"content":"<task-notification>a background task finished</task-notification>"}}
+{"type":"assistant","sessionId":"tn-1","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"TASK-DONE"}]}}
