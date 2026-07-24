@@ -5,6 +5,35 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-24
+
+### Fixed
+
+- **A message sent to an agent that is compacting is no longer reported as "not received."** When a
+  claude worker is compacting its context (manual `/compact` or the auto window), the TUI **queues** an
+  incoming message and runs it once compaction finishes — but the transcript shows no new turn and reads
+  *idle*, so overseer used to (a) fail `send` at the submit step ("could not confirm the message
+  submitted") even though the message was in fact queued, and (b) let `wait` return `idle` immediately,
+  as if the turn were already done. An orchestrating admin agent therefore believed the worker never got
+  the message. Now:
+  - `_submit` recognizes Claude's queued-message state (`Press up to edit queued messages`) as a
+    successful submit, so a queued message no longer looks like a stuck input box.
+  - `send` reports `sent … (QUEUED — the agent is compacting its context / finishing its current turn)`
+    and **exits 0** — the message was accepted and will run when the agent frees up. It points at
+    `wait` for the reply.
+  - `chat` announces the queue and **waits through** the compaction for the reply instead of racing.
+  - `wait` treats a queued message as pending work and blocks until the queued turn actually completes,
+    rather than returning `idle` during the compaction.
+
+### Added
+
+- **`fleet status` now shows a `compacting` state** (screen-detected: `Compacting conversation…` /
+  `Compacting at auto window (`) so a compacting agent — which reads *idle* in the transcript — is no
+  longer mislabeled `idle`. The fleet-wide broadcast preview consequently lists it under *skipped* (a
+  message would only queue there), not as an idle recipient. New pure parsers `_compacting_text` /
+  `_queued_text` are covered by `tests/run.sh` against a real captured `tests/fixtures/compacting-claude.txt`,
+  including a negative fixture proving prose that merely mentions "compaction" is not matched.
+
 ## [0.25.0] - 2026-07-22
 
 ### Added

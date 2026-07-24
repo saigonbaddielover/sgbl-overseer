@@ -74,8 +74,14 @@ cmd_send() {
   local since; since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   _unlock_pane
+  if _queued "$pane"; then
+    local why="finishing its current turn"; _compacting "$pane" && why="compacting its context"
+    printf 'sent to %s (QUEUED — the agent is %s):\n%s\naccepted and will run when the agent is free; await the reply: overseer wait %s [timeout]\n' "$pane" "$why" "$msg" "$target"
+    return 0
+  fi
   local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since" "$bbytes") || rc=$?
   case "$rc" in
+    4) printf 'sent to %s (queued behind compaction):\n%s\nthe agent is compacting its context; your message was accepted and is QUEUED — it runs when compaction finishes. Await the reply with: overseer wait %s [timeout]\n' "$pane" "$msg" "$target" ;;
     2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
     1) printf 'sent to %s:\n%s\n' "$pane" "$msg"
        _die "could not confirm the turn started within 10s — the message may still be sitting in the input box; peek: overseer peek $target" ;;
@@ -110,7 +116,12 @@ cmd_chat() {
   since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   _unlock_pane
-  printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
+  if _queued "$pane"; then
+    if _compacting "$pane"; then printf '# %s is compacting its context — your message is QUEUED behind it; waiting through the compaction for the reply...\n' "$pane" >&2
+    else printf '# %s has your message QUEUED behind its current turn; waiting for the reply...\n' "$pane" >&2; fi
+  else
+    printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
+  fi
   if [ "$has_tx" = 0 ]; then
     path=$(_wait_started "$target" "$kind" "$path" 0 30 "$pane") || true
     { [ -z "$path" ] || [ ! -f "$path" ]; } && _die "sent, but no transcript appeared for '$target' within 30s — check it with: overseer peek $target ; then resume: overseer wait $target"
@@ -134,7 +145,7 @@ cmd_wait() {
   if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; return 0; fi
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
-  if _h_is_busy "$kind" "$path"; then
+  if _h_is_busy "$kind" "$path" || _queued "$pane"; then
     local sid rc; sid=''; [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
     rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" "$(_fsize "$path")" || rc=$?
     case "$rc" in
@@ -152,6 +163,7 @@ _fleet_status() {
   ctx=$(_target_ctx "$pane") || { printf '%s\t?\t(not an agent)\n' "$pane"; return 0; }
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   if _awaiting "$pane" >/dev/null 2>&1; then state=awaiting
+  elif _compacting "$pane"; then state=compacting
   elif [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path"; then state=busy
   elif [ -n "$path" ] && [ -f "$path" ]; then state=idle
   else state='idle(0-turn)'; fi

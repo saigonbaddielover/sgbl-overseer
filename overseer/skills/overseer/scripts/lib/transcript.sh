@@ -118,6 +118,7 @@ _wait_started() {
       fi
     fi
     [ -n "$pane" ] && _awaiting "$pane" >/dev/null 2>&1 && { printf '%s' "$path"; return 2; }
+    [ -n "$pane" ] && _compacting "$pane" && { printf '%s' "$path"; return 4; }
     _nap
   done
   printf '%s' "$path"; return 1
