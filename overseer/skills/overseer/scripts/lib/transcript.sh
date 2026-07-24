@@ -26,16 +26,25 @@ _last_prompt() {
 _last_reply() {
   jq -rn 'last(inputs | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n"))) // ""' "$1" 2>/dev/null
 }
-_reply_after_last_prompt() {
-  jq -rn 'reduce inputs as $e ({seen:false, reply:null};
-    if ($e.type=="user" and ($e.origin.kind? == "human") and (($e.message.content|type)=="string")) then {seen:true, reply:null}
+_reply_for_prompt() {
+  jq -rn --arg want "$(_trim "${2:-}")" 'reduce inputs as $e ({armed:false, reply:null};
+    if ($e.type=="user" and ($e.origin.kind? == "human") and (($e.message.content|type)=="string"))
+      then (if ($want=="" or (($e.message.content|gsub("^\\s+|\\s+$";"")) == $want)) then {armed:true, reply:null} else .armed=false end)
     elif ($e.type=="assistant"
           and (($e.message.stop_reason // "") as $s | $s != "" and $s != "tool_use")
           and (($e.message.content // []) | map(.type) | index("text")))
-      then (if (.seen and .reply==null)
+      then (if (.armed and .reply==null)
             then .reply = (($e.message.content) | map(select(.type=="text") | .text) | join("\n"))
             else . end)
     else . end) | .reply // ""' "$1" 2>/dev/null
+}
+_answered() {
+  [ "$(jq -rn --arg want "$(_trim "${2:-}")" 'reduce inputs as $e ({armed:false, done:false};
+    if ($e.type=="user" and ($e.origin.kind? == "human") and (($e.message.content|type)=="string"))
+      then (if ($want=="" or (($e.message.content|gsub("^\\s+|\\s+$";"")) == $want)) then {armed:true, done:false} else .armed=false end)
+    elif ($e.type=="assistant" and (($e.message.stop_reason // "") as $s | $s != "" and $s != "tool_use"))
+      then (if .armed then .done=true else . end)
+    else . end) | .done' "$1" 2>/dev/null)" = true ]
 }
 _sid_from_jsonl() { jq -r 'select(.sessionId != null and .sessionId != "") | .sessionId' "$1" 2>/dev/null | head -1; }
 # ---- Codex rollout readers (~/.codex/sessions/**/rollout-*.jsonl) ----------
@@ -56,12 +65,21 @@ _cx_is_busy() {
   [ "${st:-0}" -gt "$(( ${ct:-0} + ${ab:-0} ))" ]
 }
 _cx_last_reply() { jq -rn 'last(inputs | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty) // ""' "$1" 2>/dev/null; }
-_cx_reply_after_last_prompt() {
-  jq -rn 'reduce inputs as $e ({seen:false, reply:null};
-    if ($e.type=="event_msg" and $e.payload.type=="user_message") then {seen:true, reply:null}
+_cx_reply_for_prompt() {
+  jq -rn --arg want "$(_trim "${2:-}")" 'reduce inputs as $e ({armed:false, reply:null};
+    if ($e.type=="event_msg" and $e.payload.type=="user_message")
+      then (if ($want=="" or (($e.payload.message|gsub("^\\s+|\\s+$";"")) == $want)) then {armed:true, reply:null} else .armed=false end)
     elif ($e.type=="event_msg" and $e.payload.type=="task_complete" and (($e.payload.last_agent_message // "") != ""))
-      then (if (.seen and .reply==null) then .reply = $e.payload.last_agent_message else . end)
+      then (if (.armed and .reply==null) then .reply = $e.payload.last_agent_message else . end)
     else . end) | .reply // ""' "$1" 2>/dev/null
+}
+_cx_answered() {
+  [ "$(jq -rn --arg want "$(_trim "${2:-}")" 'reduce inputs as $e ({armed:false, done:false};
+    if ($e.type=="event_msg" and $e.payload.type=="user_message")
+      then (if ($want=="" or (($e.payload.message|gsub("^\\s+|\\s+$";"")) == $want)) then {armed:true, done:false} else .armed=false end)
+    elif ($e.type=="event_msg" and $e.payload.type=="task_complete")
+      then (if .armed then .done=true else . end)
+    else . end) | .done' "$1" 2>/dev/null)" = true ]
 }
 _cx_last_prompt() {
   local p
@@ -78,7 +96,8 @@ _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count
 _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$2" ;;    esac; }
 _h_running()    { case "$1" in claude) _running_claude "$2" ;; codex) _cx_is_busy "$2" ;; esac; }
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
-_h_reply_bound() { case "$1" in claude) _reply_after_last_prompt "$2" ;; codex) _cx_reply_after_last_prompt "$2" ;; esac; }
+_h_reply_for()  { case "$1" in claude) _reply_for_prompt "$2" "$3" ;; codex) _cx_reply_for_prompt "$2" "$3" ;; esac; }
+_h_answered()   { case "$1" in claude) _answered "$2" "$3" ;; codex) _cx_answered "$2" "$3" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
 _file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
 _marker_since() {
@@ -127,9 +146,8 @@ _wait_reply() {
   return 1
 }
 _wait_queued_reply() {
-  local kind="$1" path="$2" timeout="${3:-600}" pane="$4" msg="$5" i=0 cur sig last='' want
+  local kind="$1" path="$2" timeout="${3:-600}" pane="$4" msg="$5" i=0 cur sig last=''
   local deadline=$((SECONDS + timeout))
-  want=$(_trim "$msg")
   while [ "$SECONDS" -lt "$deadline" ]; do
     if [ -n "$pane" ]; then
       _awaiting "$pane" >/dev/null 2>&1 && return 2
@@ -138,7 +156,7 @@ _wait_queued_reply() {
     sig=$(_file_sig "$path")
     if [ "$sig" != "$last" ]; then
       last="$sig"
-      [ "$(_trim "$(_h_last_prompt "$kind" "$path")")" = "$want" ] && ! _h_running "$kind" "$path" && return 0
+      _h_answered "$kind" "$path" "$msg" && return 0
     fi
     i=$((i + 1)); _nap
   done

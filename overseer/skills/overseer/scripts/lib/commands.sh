@@ -61,6 +61,7 @@ cmd_send() {
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   _lock_pane "$pane"
+  { _queued "$pane" && ! _compacting "$pane"; } && { _unlock_pane; _die "a message is already queued to $pane behind its running turn (the agent holds one queued message at a time) — wait for it to run first: overseer wait $target"; }
   local base; base=$(_h_turn_count "$kind" "$path" 2>/dev/null); base="${base:-0}"
   local bbytes; bbytes=$(_fsize "$path")
   local prequeue=0; { { [ -n "$path" ] && [ -f "$path" ] && _h_running "$kind" "$path"; } || _compacting "$pane"; } && prequeue=1
@@ -102,6 +103,7 @@ cmd_chat() {
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   _lock_pane "$pane"
+  { _queued "$pane" && ! _compacting "$pane"; } && { _unlock_pane; _die "a message is already queued to $pane behind its running turn (the agent holds one queued message at a time) — wait for it to run first: overseer wait $target"; }
   local has_tx=0; { [ -n "$path" ] && [ -f "$path" ]; } && has_tx=1
 
   local sid='' base=0 since bbytes='' prequeue=0
@@ -134,7 +136,7 @@ cmd_chat() {
   fi
   case "$rc" in
     0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
-       else printf '## reply:\n%s\n' "$(_h_reply_bound "$kind" "$path")"; fi ;;
+       else printf '## reply:\n%s\n' "$(_h_reply_for "$kind" "$path" "$msg")"; fi ;;
     2) _report_awaiting "$pane" "$target" ;;
     3) _die "the agent in $pane exited mid-turn (its pane dropped to a shell) — no reply was produced; peek: overseer peek $target" ;;
     *) _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun chat (it would send the message again); resume waiting instead: overseer wait $target   then   overseer read $target" ;;

@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"q2-1","origin":{"kind":"human"},"message":{"content":"ASK-A"}}
+{"type":"assistant","sessionId":"q2-1","message":{"stop_reason":"end_turn","content":[{"type":"text","text":"REPLY-A"}]}}
+{"type":"user","sessionId":"q2-1","origin":{"kind":"human"},"message":{"content":"ASK-B"}}
+{"type":"assistant","sessionId":"q2-1","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","name":"Bash"}]}}
