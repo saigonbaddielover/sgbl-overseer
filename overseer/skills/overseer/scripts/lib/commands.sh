@@ -52,18 +52,18 @@ cmd_keys() {
 }
 cmd_send() {
   _need tmux
-  local confirm=1 force=0
-  while :; do case "${1:-}" in --yes) confirm=0; shift ;; --force) force=1; shift ;; *) break ;; esac; done
+  local confirm=1
+  while :; do case "${1:-}" in --yes) confirm=0; shift ;; *) break ;; esac; done
   local target="${1:-}" msg
-  [ -n "$target" ] || _die "usage: overseer send [--yes] [--force] <pane|session> <message|->"
+  [ -n "$target" ] || _die "usage: overseer send [--yes] <pane|session> <message|->"
   msg=$(_read_msg "${2:-}")
-  [ -n "$msg" ] || _die "usage: overseer send [--yes] [--force] <pane|session> <message|->  (empty message)"
+  [ -n "$msg" ] || _die "usage: overseer send [--yes] <pane|session> <message|->  (empty message)"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   _lock_pane "$pane"
-  [ "$force" = 0 ] && [ -n "$path" ] && [ -f "$path" ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
   local base; base=$(_h_turn_count "$kind" "$path" 2>/dev/null); base="${base:-0}"
   local bbytes; bbytes=$(_fsize "$path")
+  local prequeue=0; { { [ -n "$path" ] && [ -f "$path" ] && _h_running "$kind" "$path"; } || _compacting "$pane"; } && prequeue=1
   local sid=''; [ "$kind" = claude ] && [ -n "$path" ] && [ -f "$path" ] && sid=$(_sid_from_jsonl "$path")
 
   _deliver "$pane" "$kind" "$msg" || _die "$(_undelivered "$pane" "$target")"
@@ -74,14 +74,15 @@ cmd_send() {
   local since; since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   _unlock_pane
-  if _queued "$pane"; then
-    local why="finishing its current turn"; _compacting "$pane" && why="compacting its context"
+  if [ "$prequeue" = 1 ]; then
+    local why="busy with its current turn"; _compacting "$pane" && why="compacting its context"
     printf 'sent to %s (QUEUED — the agent is %s):\n%s\naccepted and will run when the agent is free; await the reply: overseer wait %s [timeout]\n' "$pane" "$why" "$msg" "$target"
     return 0
   fi
-  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since" "$bbytes") || rc=$?
+  local rc=0; path=$(_wait_started "$target" "$kind" "$path" "$base" 10 "$pane" "$sid" "$since" "$bbytes" "$prequeue") || rc=$?
   case "$rc" in
-    4) printf 'sent to %s (queued behind compaction):\n%s\nthe agent is compacting its context; your message was accepted and is QUEUED — it runs when compaction finishes. Await the reply with: overseer wait %s [timeout]\n' "$pane" "$msg" "$target" ;;
+    5|4) local why="busy with its current turn"; _compacting "$pane" && why="compacting its context"
+       printf 'sent to %s (QUEUED — the agent is %s):\n%s\naccepted and will run when the agent is free; await the reply: overseer wait %s [timeout]\n' "$pane" "$why" "$msg" "$target" ;;
     2) printf 'sent to %s:\n%s\n' "$pane" "$msg"; _report_awaiting "$pane" "$target" ;;
     1) printf 'sent to %s:\n%s\n' "$pane" "$msg"
        _die "could not confirm the turn started within 10s — the message may still be sitting in the input box; peek: overseer peek $target" ;;
@@ -91,23 +92,23 @@ cmd_send() {
 # send + wait for the turn to finish + print the reply (the human round-trip).
 cmd_chat() {
   _need tmux; _need jq
-  local confirm=1 force=0
-  while :; do case "${1:-}" in --yes) confirm=0; shift ;; --force) force=1; shift ;; *) break ;; esac; done
+  local confirm=1
+  while :; do case "${1:-}" in --yes) confirm=0; shift ;; *) break ;; esac; done
   local target="${1:-}" msg
-  [ -n "$target" ] || _die "usage: overseer chat [--yes] [--force] <pane|session> <message|-> [timeout_s]"
+  [ -n "$target" ] || _die "usage: overseer chat [--yes] <pane|session> <message|-> [timeout_s]"
   msg=$(_read_msg "${2:-}")
-  [ -n "$msg" ] || _die "usage: overseer chat [--yes] [--force] <pane|session> <message|-> [timeout_s]  (empty message)"
+  [ -n "$msg" ] || _die "usage: overseer chat [--yes] <pane|session> <message|-> [timeout_s]  (empty message)"
   local timeout="${3:-$DEFAULT_TIMEOUT}"; _uint "$timeout"
   local ctx pane kind path; ctx=$(_target_ctx "$target") || _die "no agent pane (claude/codex) for target: $target (if the session is split, target the pane id %N — see: overseer list)"
   IFS=$'\t' read -r pane kind path <<< "$ctx"
   _lock_pane "$pane"
   local has_tx=0; { [ -n "$path" ] && [ -f "$path" ]; } && has_tx=1
-  [ "$force" = 0 ] && [ "$has_tx" = 1 ] && _h_is_busy "$kind" "$path" && _die "session looks mid-turn; wait: overseer wait $target — or interrupt: overseer keys $target Escape. If it is actually idle (a turn was aborted mid-tool), rerun with --force"
 
-  local sid='' base=0 since bbytes=''
+  local sid='' base=0 since bbytes='' prequeue=0
   if [ "$has_tx" = 1 ]; then
     [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path"); base=$(_h_turn_count "$kind" "$path"); bbytes=$(_fsize "$path")
   fi
+  { { [ "$has_tx" = 1 ] && _h_running "$kind" "$path"; } || _compacting "$pane"; } && prequeue=1
   _deliver "$pane" "$kind" "$msg" || _die "$(_undelivered "$pane" "$target")"
   if [ "$confirm" = 1 ]; then
     printf 'verified in box:\n%s\n--- press Enter to send, Ctrl-C to abort: ' "$msg"
@@ -116,18 +117,21 @@ cmd_chat() {
   since=$(date +%s)
   _submit "$pane" || _die "could not confirm the message submitted (it may still be in the input box) — peek: overseer peek $target"
   _unlock_pane
-  if _queued "$pane"; then
-    if _compacting "$pane"; then printf '# %s is compacting its context — your message is QUEUED behind it; waiting through the compaction for the reply...\n' "$pane" >&2
-    else printf '# %s has your message QUEUED behind its current turn; waiting for the reply...\n' "$pane" >&2; fi
-  else
-    printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
-  fi
+  local rc=0
   if [ "$has_tx" = 0 ]; then
     path=$(_wait_started "$target" "$kind" "$path" 0 30 "$pane") || true
     { [ -z "$path" ] || [ ! -f "$path" ]; } && _die "sent, but no transcript appeared for '$target' within 30s — check it with: overseer peek $target ; then resume: overseer wait $target"
     [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
+    printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
+    _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" "$bbytes" || rc=$?
+  elif [ "$prequeue" = 1 ]; then
+    if _compacting "$pane"; then printf '# %s is compacting — your message is QUEUED behind it; waiting for ITS reply...\n' "$pane" >&2
+    else printf '# %s is busy — your message is QUEUED behind the running turn; waiting for ITS reply...\n' "$pane" >&2; fi
+    _wait_queued_reply "$kind" "$path" "$timeout" "$pane" "$msg" || rc=$?
+  else
+    printf '# sent to %s (waiting for reply...)\n' "$pane" >&2
+    _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" "$bbytes" || rc=$?
   fi
-  local rc=0; _wait_reply "$kind" "$path" "$base" "$timeout" "$sid" "$since" "$pane" "$bbytes" || rc=$?
   case "$rc" in
     0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"
        else printf '## reply:\n%s\n' "$(_h_last_reply "$kind" "$path")"; fi ;;
@@ -145,18 +149,18 @@ cmd_wait() {
   if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; return 0; fi
   [ -n "$path" ] && [ -f "$path" ] || _die "no transcript yet for '$target' (a brand-new session with 0 turns has none)"
   # already ended a turn -> idle; mid-turn -> wait for the turn to end
-  if _h_is_busy "$kind" "$path" || _queued "$pane"; then
-    local sid rc; sid=''; [ "$kind" = claude ] && sid=$(_sid_from_jsonl "$path")
-    rc=0; _wait_reply "$kind" "$path" "$(_h_turn_count "$kind" "$path")" "$timeout" "$sid" "$(date +%s)" "$pane" "$(_fsize "$path")" || rc=$?
-    case "$rc" in
-      0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
-      2) _report_awaiting "$pane" "$target" ;;
-      3) _die "the agent in $pane exited mid-turn (its pane dropped to a shell); peek: overseer peek $target" ;;
-      *) _die "timeout after ${timeout}s" ;;
-    esac
+  local rc=0
+  if _queued "$pane" || _h_running "$kind" "$path"; then
+    _wait_drained "$kind" "$path" "$timeout" "$pane" || rc=$?
   else
-    echo "idle"
+    echo "idle"; return 0
   fi
+  case "$rc" in
+    0) if _awaiting "$pane" >/dev/null 2>&1; then _report_awaiting "$pane" "$target"; else echo "idle"; fi ;;
+    2) _report_awaiting "$pane" "$target" ;;
+    3) _die "the agent in $pane exited mid-turn (its pane dropped to a shell); peek: overseer peek $target" ;;
+    *) _die "timeout after ${timeout}s" ;;
+  esac
 }
 _fleet_status() {
   local pane="$1" ctx kind path state
@@ -171,7 +175,7 @@ _fleet_status() {
 }
 _fleet_local() {
   local action="${1:-status}"; shift || true
-  local -a targets=(); local sess pane pid kind cwd p msg
+  local -a targets=(); local sess pane pid kind cwd p msg st
   local -a fl=()
   while IFS=$'\t' read -r sess pane pid kind cwd; do targets+=("$pane"); done < <(_panes)
   [ "${#targets[@]}" -gt 0 ] || return 1
@@ -181,14 +185,19 @@ _fleet_local() {
     wait)   _need jq; for p in "${targets[@]}"; do printf '# %s: ' "$p"; ( cmd_wait "$p" "$@" ) || true; done ;;
     send|chat)
       [ "$action" = chat ] && _need jq
-      while :; do case "${1:-}" in --yes|--force) fl+=("$1"); shift ;; *) break ;; esac; done
-      msg="${1:-}"; [ -n "$msg" ] || _die "usage: overseer fleet $action [--yes] [--force] <message>  (broadcasts to every agent pane)"
+      while :; do case "${1:-}" in --yes) fl+=("$1"); shift ;; *) break ;; esac; done
+      msg="${1:-}"; [ -n "$msg" ] || _die "usage: overseer fleet $action [--yes] <message>  (broadcasts to every agent pane)"
       for p in "${targets[@]}"; do
         printf '===== %s =====\n' "$p"
+        st=$(_fleet_status "$p" | cut -f3)
+        case "$st" in
+          idle|'idle(0-turn)') : ;;
+          *) printf '(skipped — %s; a broadcast only messages idle agents, so it never queues onto a busy one)\n' "$st"; continue ;;
+        esac
         if [ "$action" = send ]; then ( cmd_send ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true
         else ( cmd_chat ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true; fi
       done ;;
-    *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] <msg>|chat [--yes] [--force] <msg>]  (no subcommand = status)" ;;
+    *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] <msg>|chat [--yes] <msg>]  (no subcommand = status)" ;;
   esac
 }
 _fleet_survey() {
@@ -233,7 +242,7 @@ _fleet_gate() {
 cmd_fleet() {
   _need tmux
   local remote=0 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
-  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--force] [--dry-run] <msg>|chat [--yes] [--force] [--dry-run] <msg>]'
+  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--dry-run] <msg>|chat [--yes] [--dry-run] <msg>]'
   while :; do case "${1:-}" in
     --hosts) remote=1; shift ;;
     --tailscale) remote=1; usetail=1; shift ;;
@@ -249,19 +258,17 @@ cmd_fleet() {
   fi
   _need ssh
   local yes=0 dry=0 msg=''
-  local -a fwd=()
   case "$action" in
     send|chat)
       shift
       while :; do case "${1:-}" in
         --yes) yes=1; shift ;;
-        --force) fwd+=(--force); shift ;;
         --dry-run) dry=1; shift ;;
         *) break ;;
       esac; done
       msg="${1:-}"
-      [ -n "$msg" ] || _die "usage: overseer fleet --hosts $action [--yes] [--force] [--dry-run] <message>  (broadcasts to every idle agent in the fleet)"
-      set -- "$action" --yes ${fwd[@]+"${fwd[@]}"} "$msg" ;;
+      [ -n "$msg" ] || _die "usage: overseer fleet --hosts $action [--yes] [--dry-run] <message>  (broadcasts to every idle agent in the fleet)"
+      set -- "$action" --yes "$msg" ;;
   esac
   local ts=''
   [ "$usetail" = 1 ] && { command -v tailscale >/dev/null 2>&1 && ts=$(tailscale status 2>/dev/null || true); }
