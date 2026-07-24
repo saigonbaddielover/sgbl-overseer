@@ -196,6 +196,21 @@ _gatenone() { ( _need() { :; }
 eq "fleet gate: no idle agent stops before any prompt" "yes" "$(case "$(_gatenone)" in *'no idle agent anywhere'*) echo yes ;; *) echo no ;; esac)"
 eq "fleet gate: no idle agent returns stop"            "1"   "$(_gatenone >/dev/null 2>&1; echo $?)"
 
+WAF="${TMPDIR:-/tmp}/ov-waitany-$$"
+_waitany() { ( _need() { :; }
+  _fleet_status() { case "$1" in
+    %busy) if [ -f "$WAF" ]; then printf '%%busy\tclaude\tidle\n'; else : >"$WAF"; printf '%%busy\tclaude\tbusy\n'; fi ;;
+    *) printf '%s\tclaude\tidle\n' "$1" ;;
+  esac; }
+  _fleet_wait_any 5 "$@" ) 2>/dev/null; }
+rm -f "$WAF"
+eq "fleet wait --any: first pane to leave in-flight wins"  "yes" "$(case "$(_waitany %busy %idle)" in *%busy*idle*) echo yes ;; *) echo no ;; esac)"
+rm -f "$WAF"
+eq "fleet wait --any: nothing in flight returns at once"   "yes" "$(case "$(_waitany %i1 %i2)" in *'nothing in flight'*) echo yes ;; *) echo no ;; esac)"
+rm -f "$WAF"
+eq "fleet: no-agent-panes uses a distinct sentinel (3, not the wait-timeout code)" "3" \
+   "$( ( _panes() { :; }; _need() { :; }; _fleet_local status ) >/dev/null 2>&1; echo $? )"
+
 eq "provision: --dry-run threads DRY=1" "yes" "$(_provision_script 1 | grep -qx 'DRY=1' && echo yes || echo no)"
 eq "provision: defaults to DRY=0"       "yes" "$(_provision_script | grep -qx 'DRY=0' && echo yes || echo no)"
 eq "provision: targets tmux and jq"     "yes" "$(_provision_script 0 | grep -q 'for c in tmux jq' && echo yes || echo no)"
