@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-24
+
+### Fixed
+
+- **`chat`'s prompt-bound reply now covers Codex too, not just Claude.** v0.28.0 bound `chat`'s printed
+  reply to your own message for Claude; Codex kept the "last `task_complete`" reader. But Codex can also
+  produce a completed turn *after* the one that answered your message — a null `task_complete` (observed
+  in real rollouts) or, when the Codex agent is orchestrating child agents, a content-bearing
+  completion-notification turn — either of which could shift the reply `chat` printed. Codex now uses the
+  same prompt-bound reader (`_cx_reply_after_last_prompt`: the first non-empty `task_complete` after your
+  `user_message`), verified against a real rollout with trailing null turns and live end-to-end. `read`'s
+  `_cx_last_reply` already filtered the null turns, so it was unaffected; only `chat` is changed.
+
 ## [0.28.0] - 2026-07-24
 
 ### Fixed

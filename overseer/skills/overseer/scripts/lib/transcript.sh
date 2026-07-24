@@ -56,6 +56,13 @@ _cx_is_busy() {
   [ "${st:-0}" -gt "$(( ${ct:-0} + ${ab:-0} ))" ]
 }
 _cx_last_reply() { jq -rn 'last(inputs | select(.type=="event_msg" and .payload.type=="task_complete") | .payload.last_agent_message // empty) // ""' "$1" 2>/dev/null; }
+_cx_reply_after_last_prompt() {
+  jq -rn 'reduce inputs as $e ({seen:false, reply:null};
+    if ($e.type=="event_msg" and $e.payload.type=="user_message") then {seen:true, reply:null}
+    elif ($e.type=="event_msg" and $e.payload.type=="task_complete" and (($e.payload.last_agent_message // "") != ""))
+      then (if (.seen and .reply==null) then .reply = $e.payload.last_agent_message else . end)
+    else . end) | .reply // ""' "$1" 2>/dev/null
+}
 _cx_last_prompt() {
   local p
   p=$(jq -rn 'last(inputs | select(.type=="event_msg" and .payload.type=="user_message") | .payload.message) // empty' "$1" 2>/dev/null)
@@ -71,7 +78,7 @@ _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count
 _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$2" ;;    esac; }
 _h_running()    { case "$1" in claude) _running_claude "$2" ;; codex) _cx_is_busy "$2" ;; esac; }
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
-_h_reply_bound() { case "$1" in claude) _reply_after_last_prompt "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
+_h_reply_bound() { case "$1" in claude) _reply_after_last_prompt "$2" ;; codex) _cx_reply_after_last_prompt "$2" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
 _file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
 _marker_since() {

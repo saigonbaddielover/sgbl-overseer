@@ -1,0 +1,7 @@
+{"type":"event_msg","payload":{"type":"user_message","message":"ping"}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"PONG"}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":null}}
+{"type":"event_msg","payload":{"type":"task_started"}}
+{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"CHILD-NOTIFY-REPLY"}}
