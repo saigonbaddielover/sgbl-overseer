@@ -5,7 +5,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.31.0] - 2026-07-24
+## [0.32.0] - 2026-07-24
+
+### Fixed
+
+- **A turn that completes just as its pane drops to a shell is no longer reported as a mid-turn
+  death.** `chat`/`wait`'s wait loops fail fast with `rc=3` when the watched pane falls back to a shell
+  (the agent died or was quit) instead of waiting out the timeout. But the reply is written to the
+  transcript *before* the agent process exits, so an agent that answered and then quit left a tiny
+  window where the loop could see the shell drop before reading the just-flushed turn — turning a real
+  reply into "the agent exited mid-turn — no reply was produced." All three waiters (`_wait_reply`,
+  `_wait_queued_reply`, `_wait_drained`) now re-read the transcript one last time before returning
+  `rc=3`: if the turn actually completed, `chat` returns the reply and `wait` reports `idle`/drained;
+  only a genuinely unfinished turn still yields `rc=3`. The turn-advanced check is factored into a
+  shared `_turn_advanced` helper (unit-tested) and the invariant "a completed turn is never masked as
+  `rc=3`" is asserted in the harness-free stress subset.
 
 ### Fixed
 

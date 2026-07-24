@@ -119,6 +119,10 @@ _turns_after() {
 _signal_since() {   # sid since_epoch
   _marker_since turn-done "$1" "$2"
 }
+_turn_advanced() {   # kind path base bbytes
+  if [ -n "$4" ]; then [ "$(_turns_after "$1" "$2" "$4")" -gt 0 ]
+  else [ "$(_h_turn_count "$1" "$2")" -gt "$3" ]; fi
+}
 # block until the turn started by our send has ended, i.e. the turn count passes the baseline.
 # claude: prefer the Stop-hook signal (event-driven, ~0.25s), fall back to polling the transcript
 # every ~2s so a session the hook does not cover still resolves. codex: no hook, so poll the rollout
@@ -133,13 +137,14 @@ _wait_reply() {
     sig=$(_file_sig "$path")
     if { [ "$woke" = 1 ] || [ "$kind" = codex ] || [ $((i % 8)) -eq 0 ]; } && [ "$sig" != "$last" ]; then
       last="$sig"
-      if [ -n "$bbytes" ]; then [ "$(_turns_after "$kind" "$path" "$bbytes")" -gt 0 ] && return 0
-      else [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && return 0; fi
+      _turn_advanced "$kind" "$path" "$base" "$bbytes" && return 0
     fi
     if [ -n "$pane" ] && { { [ "$i" -gt 0 ] && [ $((i % 4)) -eq 0 ]; } || { [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since awaiting "$sid" "$since"; }; } && _awaiting "$pane" >/dev/null 2>&1; then return 2; fi
     if [ -n "$pane" ] && [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then
-      cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3
-      _is_shell "$cur" && return 3
+      if ! cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || _is_shell "$cur"; then
+        _turn_advanced "$kind" "$path" "$base" "$bbytes" && return 0
+        return 3
+      fi
     fi
     i=$((i + 1)); _nap
   done
@@ -151,7 +156,12 @@ _wait_queued_reply() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     if [ -n "$pane" ]; then
       _awaiting "$pane" >/dev/null 2>&1 && return 2
-      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3; _is_shell "$cur" && return 3; fi
+      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then
+        if ! cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || _is_shell "$cur"; then
+          _h_answered "$kind" "$path" "$msg" && return 0
+          return 3
+        fi
+      fi
     fi
     sig=$(_file_sig "$path")
     if [ "$sig" != "$last" ]; then
@@ -168,7 +178,12 @@ _wait_drained() {
   while [ "$SECONDS" -lt "$deadline" ]; do
     if [ -n "$pane" ]; then
       _awaiting "$pane" >/dev/null 2>&1 && return 2
-      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3; _is_shell "$cur" && return 3; fi
+      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then
+        if ! cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || _is_shell "$cur"; then
+          _h_running "$kind" "$path" || return 0
+          return 3
+        fi
+      fi
     fi
     sig=$(_file_sig "$path")
     if [ "$sig" != "$last" ]; then last="$sig"; if _h_running "$kind" "$path"; then running=1; else running=0; fi; fi
