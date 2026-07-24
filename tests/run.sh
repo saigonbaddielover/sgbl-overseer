@@ -47,6 +47,12 @@ eq "running: answered turn is idle" ""        "$(_running_claude "$C" && echo ru
 eq "h_running claude dispatch"      "running" "$(_h_running claude "$CB" && echo running)"
 eq "h_running codex dispatch"       "running" "$(_h_running codex "$FIX/codex-busy.jsonl" && echo running)"
 
+RTN="$FIX/claude-reply-after-tasknotif.jsonl"
+eq "reply bound to our prompt, not a later task-notif turn" "ANS1"      "$(_reply_after_last_prompt "$RTN")"
+eq "last_reply mis-attributes to the later turn"            "TASK-DONE" "$(_last_reply "$RTN")"
+eq "reply_bound == last_reply when no later turn"           "$(_last_reply "$C")" "$(_reply_after_last_prompt "$C")"
+eq "h_reply_bound claude dispatch"                          "ANS1"      "$(_h_reply_bound claude "$RTN")"
+
 X="$FIX/codex-turn.jsonl"
 eq "codex turn_count"      "1"                         "$(_cx_turn_count "$X")"
 eq "codex turns_after(0)"  "1"                         "$(_turns_after codex "$X" 0)"

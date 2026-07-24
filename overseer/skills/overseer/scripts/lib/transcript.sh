@@ -26,6 +26,17 @@ _last_prompt() {
 _last_reply() {
   jq -rn 'last(inputs | select(.type=="assistant") | (.message.content // []) as $c | select($c | map(.type) | index("text")) | ($c | map(select(.type=="text") | .text) | join("\n"))) // ""' "$1" 2>/dev/null
 }
+_reply_after_last_prompt() {
+  jq -rn 'reduce inputs as $e ({seen:false, reply:null};
+    if ($e.type=="user" and ($e.origin.kind? == "human") and (($e.message.content|type)=="string")) then {seen:true, reply:null}
+    elif ($e.type=="assistant"
+          and (($e.message.stop_reason // "") as $s | $s != "" and $s != "tool_use")
+          and (($e.message.content // []) | map(.type) | index("text")))
+      then (if (.seen and .reply==null)
+            then .reply = (($e.message.content) | map(select(.type=="text") | .text) | join("\n"))
+            else . end)
+    else . end) | .reply // ""' "$1" 2>/dev/null
+}
 _sid_from_jsonl() { jq -r 'select(.sessionId != null and .sessionId != "") | .sessionId' "$1" 2>/dev/null | head -1; }
 # ---- Codex rollout readers (~/.codex/sessions/**/rollout-*.jsonl) ----------
 # a Codex turn is an `event_msg` task_started ... task_complete pair; task_complete even carries the
@@ -60,6 +71,7 @@ _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count
 _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$2" ;;    esac; }
 _h_running()    { case "$1" in claude) _running_claude "$2" ;; codex) _cx_is_busy "$2" ;; esac; }
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
+_h_reply_bound() { case "$1" in claude) _reply_after_last_prompt "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
 _file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
 _marker_since() {
