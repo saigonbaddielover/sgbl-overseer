@@ -53,6 +53,12 @@ eq "last_reply mis-attributes to the later turn"            "TASK-DONE" "$(_last
 eq "reply_bound == last_reply when no later turn"           "$(_last_reply "$C")" "$(_reply_after_last_prompt "$C")"
 eq "h_reply_bound claude dispatch"                          "ANS1"      "$(_h_reply_bound claude "$RTN")"
 
+CXE="$FIX/codex-reply-after-extra.jsonl"
+eq "codex reply bound to our prompt, not a later notify turn" "PONG"               "$(_cx_reply_after_last_prompt "$CXE")"
+eq "codex last_reply mis-attributes to the later turn"        "CHILD-NOTIFY-REPLY" "$(_cx_last_reply "$CXE")"
+eq "codex reply_bound skips trailing null turns"              "codex reply text"   "$(_cx_reply_after_last_prompt "$FIX/codex-turn.jsonl")"
+eq "h_reply_bound codex dispatch"                             "PONG"               "$(_h_reply_bound codex "$CXE")"
+
 X="$FIX/codex-turn.jsonl"
 eq "codex turn_count"      "1"                         "$(_cx_turn_count "$X")"
 eq "codex turns_after(0)"  "1"                         "$(_turns_after codex "$X" 0)"
