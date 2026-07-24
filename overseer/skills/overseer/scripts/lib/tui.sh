@@ -67,6 +67,22 @@ _awaiting() {
   cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
   _awaiting_text "$cap"
 }
+_compacting_text() {
+  printf '%s\n' "$1" | grep -qE 'Compacting conversation…|Compacting conversation\.\.\.|Compacting at auto window \('
+}
+_compacting() {
+  local pane="$1" cap
+  cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
+  _compacting_text "$cap"
+}
+_queued_text() {
+  printf '%s\n' "$1" | grep -qF 'Press up to edit queued messages'
+}
+_queued() {
+  local pane="$1" cap
+  cap=$(tmux capture-pane -p -t "$pane" 2>/dev/null) || return 1
+  _queued_text "$cap"
+}
 _undelivered() {
   local pane="$1" target="$2" q
   q=$(_awaiting "$pane") || { printf 'could not place/verify message in input box'; return 0; }
@@ -173,7 +189,7 @@ _submit() {
   for i in $(seq 1 8); do
     tmux send-keys -t "$pane" Enter
     _nap
-    [ -z "$(_realtext "$pane")" ] && return 0
+    { [ -z "$(_realtext "$pane")" ] || _queued "$pane"; } && return 0
   done
-  [ -z "$(_realtext "$pane")" ]
+  { [ -z "$(_realtext "$pane")" ] || _queued "$pane"; }
 }

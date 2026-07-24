@@ -1,0 +1,11 @@
+● Here is a summary of how context compaction works in this tool.
+  The word "compaction" appears in prose, and even "Compacting history"
+  from a subprocess log, but none of that is the live spinner.
+  A previous Compaction failed earlier and was retried.
+
+  ⎿  Done (12 tool uses)
+
+❯ Type your message or paste an image
+────────────────────────────────────────────────────────────────
+  ctx: 22%/1M | ram: 0.4/0.6gb | main
+  Opus 4.8 (1M context) | effort:xhigh | think:on

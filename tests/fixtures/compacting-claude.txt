@@ -1,0 +1,17 @@
+  11. When the second set is shorter than the first, tr repeats its last character to pad it out.
+  12. Because it works strictly at the single-byte character level, tr is blazingly fast.
+
+✻ Crunched for 13s
+
+❯ /compact
+
+✻ Compacting conversation… (19s)
+  ▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱ 19%
+
+  ❯ Reply with exactly: QUEUED-OK. Nothing else.
+
+────────────────────────────────────────────────────────────────
+❯ Press up to edit queued messages
+────────────────────────────────────────────────────────────────
+  ctx: 4%/1M | ram: 0.4/0.6gb | main
+  Opus 4.8 (1M context) | effort:xhigh | think:on
