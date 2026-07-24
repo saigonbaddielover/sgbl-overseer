@@ -5,6 +5,39 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-24
+
+### Changed
+
+- **`send`/`chat` to a busy agent now QUEUE by default instead of refusing.** A running turn cannot be
+  interrupted by a second message, so the harness holds the new one and runs it when the current turn
+  ends. Previously overseer refused a mid-turn agent ("session looks mid-turn"); now it accepts the
+  message and reports honestly:
+  - `send` reports `sent … (QUEUED — the agent is busy with its current turn / compacting its context)`
+    and **exits 0**, pointing at `wait` for the reply — the same shape the compaction case already used.
+  - `chat` announces the queue and **waits for the reply to *its own* queued message**, tracking the
+    last human prompt through the queue so the reply it prints is the answer to *your* message, never
+    the running turn's reply.
+  - `wait` **drains to idle** — it blocks until the current turn finishes *and* any queued message
+    behind it has run, then reports `idle`.
+- **Fleet broadcast only messages idle panes** (unchanged behaviour, now stated plainly): a
+  busy/awaiting/compacting pane is **skipped**, never queued onto, so a broadcast never lands on
+  unrelated running work.
+
+### Fixed
+
+- **A message sent during a text-only turn (no `tool_use`) is no longer mistaken for idle.** Turn
+  detection used to key only on "the last assistant message is a `tool_use`" (`_is_busy`), which misses
+  a turn that emits pure prose. A new transcript-based check (`_running_claude`: a human prompt with no
+  completed assistant turn after it) catches both — so `send`/`chat`/`wait` see a prose-only turn as
+  running and queue/wait correctly instead of racing onto it.
+
+### Removed
+
+- **The `--force` flag is gone from Linux `send`/`chat`/`fleet`.** Its only job was to bypass the
+  mid-turn refuse guard, which no longer exists (busy agents queue instead). The Windows
+  `win <host> chat`/`send --force` bypass (transcript-fetch failure / mid-turn) is unchanged.
+
 ## [0.26.0] - 2026-07-24
 
 ### Fixed

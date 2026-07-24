@@ -9,6 +9,12 @@ _turn_count() {
 _last_stop() { jq -r 'select(.type=="assistant") | .message.stop_reason // empty' "$1" 2>/dev/null | tail -1; }
 # busy = the last turn ended in a tool_use (the session is mid-turn, running a tool). arg: jsonl.
 _is_busy() { [ "$(_last_stop "$1")" = tool_use ]; }
+_running_claude() {
+  [ "$(jq -rn 'reduce inputs as $e (false;
+    if ($e.type=="user" and ($e.origin.kind? == "human") and (($e.message.content|type)=="string")) then true
+    elif ($e.type=="assistant" and (($e.message.stop_reason // "") as $s | $s != "" and $s != "tool_use")) then false
+    else . end)' "$1" 2>/dev/null)" = true ]
+}
 _last_prompt() {
   local jl="$1" p
   p=$(jq -rn 'last(inputs | select(.type=="user" and (.origin.kind? == "human") and (.message.content|type=="string")) | .message.content) // empty' "$jl" 2>/dev/null)
@@ -52,6 +58,7 @@ _cx_last_prompt() {
 # ---- harness-dispatched reads (kind, transcript_path) ----------------------
 _h_turn_count() { case "$1" in claude) _turn_count "$2" ;; codex) _cx_turn_count "$2" ;; esac; }
 _h_is_busy()    { case "$1" in claude) _is_busy "$2" ;;    codex) _cx_is_busy "$2" ;;    esac; }
+_h_running()    { case "$1" in claude) _running_claude "$2" ;; codex) _cx_is_busy "$2" ;; esac; }
 _h_last_reply() { case "$1" in claude) _last_reply "$2" ;; codex) _cx_last_reply "$2" ;; esac; }
 _h_last_prompt(){ case "$1" in claude) _last_prompt "$2" ;; codex) _cx_last_prompt "$2" ;; esac; }
 _file_sig() { stat -c '%Y:%s' "$1" 2>/dev/null || true; }
@@ -100,10 +107,46 @@ _wait_reply() {
   done
   return 1
 }
+_wait_queued_reply() {
+  local kind="$1" path="$2" timeout="${3:-600}" pane="$4" msg="$5" i=0 cur sig last='' want
+  local deadline=$((SECONDS + timeout))
+  want=$(_trim "$msg")
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ -n "$pane" ]; then
+      _awaiting "$pane" >/dev/null 2>&1 && return 2
+      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3; _is_shell "$cur" && return 3; fi
+    fi
+    sig=$(_file_sig "$path")
+    if [ "$sig" != "$last" ]; then
+      last="$sig"
+      [ "$(_trim "$(_h_last_prompt "$kind" "$path")")" = "$want" ] && ! _h_running "$kind" "$path" && return 0
+    fi
+    i=$((i + 1)); _nap
+  done
+  return 1
+}
+_wait_drained() {
+  local kind="$1" path="$2" timeout="${3:-600}" pane="$4" i=0 cur sig last='' stable=0 running=1
+  local deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if [ -n "$pane" ]; then
+      _awaiting "$pane" >/dev/null 2>&1 && return 2
+      if [ "$i" -gt 0 ] && [ $((i % 8)) -eq 0 ]; then cur=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null) || return 3; _is_shell "$cur" && return 3; fi
+    fi
+    sig=$(_file_sig "$path")
+    if [ "$sig" != "$last" ]; then last="$sig"; if _h_running "$kind" "$path"; then running=1; else running=0; fi; fi
+    if [ "$running" = 0 ] && ! _queued "$pane"; then
+      stable=$((stable + 1)); [ "$stable" -ge 3 ] && return 0
+    else stable=0; fi
+    i=$((i + 1)); _nap
+  done
+  return 1
+}
 _wait_started() {
-  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" sid="${7:-}" since="${8:-0}" bbytes="${9:-}" ctx
+  local target="$1" kind="$2" path="$3" base="${4:-0}" timeout="${5:-10}" pane="${6:-}" sid="${7:-}" since="${8:-0}" bbytes="${9:-}" pre_busy="${10:-0}" ctx
   local deadline=$((SECONDS + timeout)) sig last=''
   while [ "$SECONDS" -lt "$deadline" ]; do
+    [ -n "$pane" ] && _queued "$pane" && { printf '%s' "$path"; return 5; }
     [ "$kind" = claude ] && [ -n "$sid" ] && _marker_since turn-started "$sid" "$since" && { printf '%s' "$path"; return 0; }
     if [ -z "$path" ] || [ ! -f "$path" ]; then
       ctx=$(_target_ctx "$target" 2>/dev/null) && IFS=$'\t' read -r _ _ path <<< "$ctx" || true
@@ -112,7 +155,7 @@ _wait_started() {
       sig=$(_file_sig "$path")
       if [ "$sig" != "$last" ]; then
         last="$sig"
-        _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
+        [ "$pre_busy" != 1 ] && _h_is_busy "$kind" "$path" && { printf '%s' "$path"; return 0; }
         if [ -n "$bbytes" ]; then [ "$(_turns_after "$kind" "$path" "$bbytes")" -gt 0 ] && { printf '%s' "$path"; return 0; }
         else [ "$(_h_turn_count "$kind" "$path")" -gt "$base" ] && { printf '%s' "$path"; return 0; }; fi
       fi
