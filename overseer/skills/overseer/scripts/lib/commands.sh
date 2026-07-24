@@ -175,16 +175,43 @@ _fleet_status() {
   else state='idle(0-turn)'; fi
   printf '%s\t%s\t%s\n' "$pane" "$kind" "$state"
 }
+_fleet_wait_any() {
+  local timeout="$1"; shift
+  _uint "$timeout"
+  local -a inflight=(); local p st row
+  for p in "$@"; do
+    st=$(_fleet_status "$p" | cut -f3)
+    case "$st" in busy|compacting) inflight+=("$p") ;; esac
+  done
+  if [ "${#inflight[@]}" -eq 0 ]; then
+    echo "no pane is busy — nothing in flight to wait for (see: overseer fleet status)"; return 0
+  fi
+  printf '# watching %s in-flight pane(s); returns on the FIRST to finish/await/exit...\n' "${#inflight[@]}" >&2
+  local deadline=$((SECONDS + timeout))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    for p in "${inflight[@]}"; do
+      row=$(_fleet_status "$p"); st=$(printf '%s' "$row" | cut -f3)
+      case "$st" in busy|compacting) : ;; *) printf 'PANE\tHARNESS\tSTATE\n%s\n' "$row"; return 0 ;; esac
+    done
+    _nap
+  done
+  printf 'timeout after %ss — all %s pane(s) still in flight\n' "$timeout" "${#inflight[@]}" >&2
+  return 1
+}
 _fleet_local() {
   local action="${1:-status}"; shift || true
-  local -a targets=(); local sess pane pid kind cwd p msg st
+  local -a targets=(); local sess pane pid kind cwd p msg st any=0
   local -a fl=()
   while IFS=$'\t' read -r sess pane pid kind cwd; do targets+=("$pane"); done < <(_panes)
-  [ "${#targets[@]}" -gt 0 ] || return 1
+  [ "${#targets[@]}" -gt 0 ] || return 3
   case "$action" in
     status) _need jq; printf 'PANE\tHARNESS\tSTATE\n'; for p in "${targets[@]}"; do ( _fleet_status "$p" ) || true; done ;;
     read)   _need jq; for p in "${targets[@]}"; do printf '===== %s =====\n' "$p"; ( cmd_read "$p" ) || printf '(unavailable)\n'; done ;;
-    wait)   _need jq; for p in "${targets[@]}"; do printf '# %s: ' "$p"; ( cmd_wait "$p" "$@" ) || true; done ;;
+    wait)
+      _need jq
+      while :; do case "${1:-}" in --any) any=1; shift ;; *) break ;; esac; done
+      if [ "$any" = 1 ]; then _fleet_wait_any "${1:-$DEFAULT_TIMEOUT}" "${targets[@]}"
+      else for p in "${targets[@]}"; do printf '# %s: ' "$p"; ( cmd_wait "$p" "$@" ) || true; done; fi ;;
     send|chat)
       [ "$action" = chat ] && _need jq
       while :; do case "${1:-}" in --yes) fl+=("$1"); shift ;; *) break ;; esac; done
@@ -199,7 +226,7 @@ _fleet_local() {
         if [ "$action" = send ]; then ( cmd_send ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true
         else ( cmd_chat ${fl[@]+"${fl[@]}"} "$p" "$msg" ) || true; fi
       done ;;
-    *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] <msg>|chat [--yes] <msg>]  (no subcommand = status)" ;;
+    *) _die "usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [--any] [timeout]|send [--yes] <msg>|chat [--yes] <msg>]  (no subcommand = status)" ;;
   esac
 }
 _fleet_survey() {
@@ -244,7 +271,7 @@ _fleet_gate() {
 cmd_fleet() {
   _need tmux
   local remote=0 usetail=0 osfilter='' defuser="${OVERSEER_HOSTS_USER:-}"
-  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [timeout]|send [--yes] [--dry-run] <msg>|chat [--yes] [--dry-run] <msg>]'
+  local u='usage: overseer fleet [--hosts|--tailscale [--os NAME]] [-u USER] [status|read|wait [--any] [timeout]|send [--yes] [--dry-run] <msg>|chat [--yes] [--dry-run] <msg>]'
   while :; do case "${1:-}" in
     --hosts) remote=1; shift ;;
     --tailscale) remote=1; usetail=1; shift ;;
@@ -255,8 +282,9 @@ cmd_fleet() {
   [ -n "$osfilter" ] && [ "$usetail" = 0 ] && _die "--os only applies with --tailscale"
   local action="${1:-status}"
   if [ "$remote" = 0 ]; then
-    _fleet_local "$@" || _die "no agent panes found (see: overseer list)"
-    return
+    local frc=0; _fleet_local "$@" || frc=$?
+    [ "$frc" = 3 ] && _die "no agent panes found (see: overseer list)"
+    return "$frc"
   fi
   _need ssh
   local yes=0 dry=0 msg=''
@@ -282,7 +310,7 @@ cmd_fleet() {
     _fleet_gate "$msg" "$dry" "$tmp" "${hosts[@]}" || { rm -rf "$tmp" 2>/dev/null || true; return 0; }
   fi
   printf '===== local =====\n'
-  ( _fleet_local "$@" ) || printf '(no local agent panes)\n'
+  local lrc=0; ( _fleet_local "$@" ) || lrc=$?; [ "$lrc" = 3 ] && printf '(no local agent panes)\n'
   local i=0 h
   for h in "${hosts[@]}"; do
     ( cmd_on "$h" fleet "$@" >"$tmp/$i" 2>&1 ) &

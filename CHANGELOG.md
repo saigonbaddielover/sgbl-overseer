@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-24
+
+### Added
+
+- **`fleet wait --any` returns on the first in-flight pane to finish/await/exit.** Plain `fleet wait`
+  fans a per-pane wait over every pane and only returns once each has been waited on in turn — fine for
+  "block until the whole fleet is settled," but wrong for the dispatch-then-react loop (send work to N
+  agents, then wake on whichever finishes first). `fleet wait --any` snapshots the panes that are
+  **busy/compacting** at call time (the in-flight set — already-idle and awaiting panes are excluded so
+  it never returns immediately on stale state) and returns as soon as the **first** of them leaves that
+  state, printing the winning pane + its new status; a poll loop (`/loop`, cron) then reacts and calls
+  again for the next. It returns `rc=0` with the winner, `rc=1` on timeout, and prints "nothing in
+  flight" (rc 0) when no pane is busy. Local-fleet feature; the multi-host `--hosts`/`--tailscale` path
+  still aggregates per host.
+
+### Fixed
+
+- **`fleet`'s "no agent panes found" no longer fires on a `wait`/`--any` timeout.** The no-panes guard
+  and a wait timeout both used to surface as exit code 1, so `fleet wait --any` timing out was
+  misreported as "no agent panes found (see: overseer list)" even with panes present. The no-panes
+  condition now uses a distinct sentinel (rc 3); a timeout propagates its own rc 1 to the caller
+  unchanged.
+
 ## [0.32.0] - 2026-07-24
 
 ### Fixed
