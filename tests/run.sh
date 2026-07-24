@@ -76,6 +76,13 @@ eq "codex last_reply"      "codex reply text"          "$(_cx_last_reply "$X")"
 eq "codex last_prompt"     "codex prompt here"         "$(_cx_last_prompt "$X")"
 
 eq "codex busy"            "busy"                      "$(_cx_is_busy "$FIX/codex-busy.jsonl" && echo busy)"
+
+eq "turn_advanced count: base below current" "adv" "$(_turn_advanced claude "$C" 0 "" && echo adv)"
+eq "turn_advanced count: base at current"    ""    "$(_turn_advanced claude "$C" 2 "" && echo adv)"
+eq "turn_advanced bytes: offset 0"           "adv" "$(_turn_advanced claude "$C" 0 0 && echo adv)"
+eq "turn_advanced bytes: offset at EOF"      ""    "$(_turn_advanced claude "$C" 0 "$(_fsize "$C")" && echo adv)"
+eq "turn_advanced codex count mode"          "adv" "$(_turn_advanced codex "$X" 0 "" && echo adv)"
+eq "turn_advanced codex bytes at EOF"        ""    "$(_turn_advanced codex "$X" 0 "$(_fsize "$X")" && echo adv)"
 eq "codex aborted!=busy"   ""                          "$(_cx_is_busy "$FIX/codex-aborted.jsonl" && echo busy)"
 
 eq "awaiting claude"       "0"                         "$(_awaiting_text "$(cat "$FIX/awaiting-claude.txt")" >/dev/null 2>&1; echo $?)"

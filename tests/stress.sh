@@ -63,6 +63,13 @@ EP=$(tmux list-panes -t "$se" -F '#{pane_id}' | head -1)
 t0=$(date +%s); rc=0; _wait_reply codex /nope.jsonl 0 30 "" 0 "$EP" "" || rc=$?; el=$(( $(date +%s) - t0 ))
 { [ "$rc" = 3 ] && [ "$el" -lt 10 ]; } && ok "liveness rc=3 in ${el}s (not 30s)" || no "liveness rc=$rc el=${el}s"
 
+echo "== E2: a completed turn is never masked as rc=3 (died-after-completion -> reply/drained, not error) =="
+CT="$HERE/fixtures/codex-turn.jsonl"
+rc=0; _wait_reply   codex "$CT" 0 30 "" 0 "$EP" "" || rc=$?
+[ "$rc" = 0 ] && ok "wait_reply: completed transcript on a shell pane -> rc=0 (not rc=3)" || no "wait_reply completed-turn invariant rc=$rc"
+rc=0; _wait_drained codex "$CT" 30 "$EP" || rc=$?
+[ "$rc" = 0 ] && ok "wait_drained: finished-then-quit pane -> rc=0 (drained, not died)" || no "wait_drained completed-turn invariant rc=$rc"
+
 echo "== F: start/stop lifecycle (create -> drive -> destroy a shell session) =="
 FN="ovS_F_$$"; SESS+=("$FN")
 bash "$O" start "$FN" shell >/dev/null 2>&1
