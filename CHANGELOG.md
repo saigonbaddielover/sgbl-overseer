@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-24
+
+### Fixed
+
+- **Windows `win <host> chat` reads its reply prompt-keyed too, matching Linux.** v0.28.0–v0.30.0 bound
+  Linux `chat`'s printed reply to your own message, but `win chat` still read the *latest* assistant
+  reply (`_h_last_reply`) — so a Windows agent that ran a `task-notification`/child-agent turn right
+  after answering could shift the printed reply. `win chat` now uses the same `_h_reply_for` reader (the
+  turn answering your prompt), falling back to the latest reply only if the prompt can't be matched in
+  the fetched transcript — so it never regresses, only tightens. Covered by the shared reader unit
+  tests; a live Windows round-trip is pending a reachable host.
+
 ## [0.30.0] - 2026-07-24
 
 ### Fixed

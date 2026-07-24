@@ -392,7 +392,8 @@ _win_chat() {
   _win_wait_turn "$_WKIND" "$_WBASE" "$_WLASTSIG" "$timeout" "$tmp" || rc=$?
   case "$rc" in
     0) if q=$(_win_awaiting); then rm -f "$tmp"; _win_report_awaiting "$target" "$q"; return 0; fi
-       printf '## reply:\n%s\n' "$(_h_last_reply "$_WKIND" "$tmp")"; rm -f "$tmp" ;;
+       local reply; reply=$(_h_reply_for "$_WKIND" "$tmp" "$prompt"); [ -n "$reply" ] || reply=$(_h_last_reply "$_WKIND" "$tmp")
+       printf '## reply:\n%s\n' "$reply"; rm -f "$tmp" ;;
     2) rm -f "$tmp"; q=$(_win_awaiting) && _win_report_awaiting "$target" "$q" ;;
     3) rm -f "$tmp"; _die "the agent on $target exited mid-turn — no reply was produced; peek: overseer win $target peek" ;;
     *) rm -f "$tmp"; _die "timeout after ${timeout}s — the turn is still running. Do NOT rerun win chat (it would send the prompt again); resume waiting instead: overseer win $target wait   then   overseer win $target read" ;;
