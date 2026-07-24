@@ -105,8 +105,9 @@ All work goes through one script; the agent calls it as
 
 `--yes` auto-submits (skips the confirm gate). A `send`/`chat` to a **busy or compacting** agent is
 **queued** behind its running turn, not refused — `send` reports `QUEUED` and exits 0, `chat` waits for
-the reply to *its own* queued message. Pass `-` as the message to read a long, multi-line prompt from
-stdin.
+the reply to *its own* queued message (bound to your message positionally, so a newer queued prompt can't
+steal it). Only **one** message queues at a time: a second `send`/`chat` while one is already queued is
+refused, pointing you at `wait`. Pass `-` as the message to read a long, multi-line prompt from stdin.
 
 ### Windows verbs (`win <host>[/name] <verb>`)
 

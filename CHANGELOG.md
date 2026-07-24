@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-07-24
+
+### Fixed
+
+- **`chat` attribution is now bound to *your* message positionally, not by "is it the last prompt."**
+  The queued-reply wait keyed on "my message is the LAST prompt and the agent is idle." If a *newer*
+  message got queued behind mine (a second orchestrator, or a human typing at the pane), mine was no
+  longer last, so my `chat` would wait out its whole timeout even though my message had already run and
+  replied. `chat` now waits until *my message's own turn completes* (`_answered`: a completed turn after
+  the prompt whose text matches mine) and prints *that* turn's reply (`_reply_for_prompt`) — independent
+  of any newer prompt, and covering Codex with the same prompt-keyed reader. This also removes the last
+  reliance on "latest reply", so a same-instant race between the pre-send idle check and the actual
+  submit can no longer misattribute.
+
+### Added
+
+- **`send`/`chat` refuse cleanly when the pane already holds a queued message.** Claude's TUI queues
+  exactly **one** message behind a running turn; a second can't be placed and used to fail with a
+  cryptic "could not place/verify message in input box." `send`/`chat` now detect the queued-message
+  state up front — only when *not* compacting, so the compaction-queue path (v0.26.0) is unchanged — and
+  refuse with an actionable message ("a message is already queued … wait for it first: overseer wait
+  <target>"). The already-queued message is never disturbed.
+
 ## [0.29.0] - 2026-07-24
 
 ### Fixed
